@@ -14,11 +14,7 @@ import { NotFoundError, ValidationError } from "@/lib/errors";
 import { STARTER_MILESTONE } from "@/lib/copy-projects";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertConcept, insertProject, insertSession, insertSkill } from "@/test/factories";
-import {
-  insertDebtItem,
-  insertEvidence,
-  linkProjectSkill,
-} from "@/test/factories-learning";
+import { insertDebtItem, insertEvidence, linkProjectSkill } from "@/test/factories-learning";
 
 const MISSING_ID = "00000000-0000-4000-8000-000000000000";
 

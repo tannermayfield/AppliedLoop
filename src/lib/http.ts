@@ -79,8 +79,17 @@ function assertSameOrigin(req: Request): void {
   if (SAFE_METHODS.has(req.method)) return;
   const origin = req.headers.get("origin");
   const host = req.headers.get("host");
-  if (origin && host && new URL(origin).host !== host) {
-    throw new ForbiddenError("Cross-site requests are not allowed.");
+  if (origin) {
+    // `Origin: null` (sandboxed iframes, some redirects) is not parseable and is not our site.
+    let originHost: string | null = null;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      originHost = null;
+    }
+    if (originHost === null || (host && originHost !== host)) {
+      throw new ForbiddenError("Cross-site requests are not allowed.");
+    }
   }
   const hasBody = req.headers.get("content-length") !== "0" && req.headers.has("content-type");
   if (hasBody && !req.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {

@@ -1,4 +1,4 @@
-﻿import { getTableName, is, sql } from "drizzle-orm";
+import { getTableName, is, sql } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { connectPglite, type DbHandle } from "../lib/db/connect";
 import * as schema from "../lib/db/schema";

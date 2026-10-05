@@ -3,6 +3,8 @@ import { DemoAiProvider } from "@/lib/ai/demo";
 import { GatewayAiProvider } from "@/lib/ai/gateway";
 import type { AiProvider, ModelRequest, PromptSpec } from "@/lib/ai/types";
 import { loadEnv } from "@/lib/env";
+import { looksLikeSolutionLeak } from "@/domain/sessions/apply/leakage";
+import { applyTutorPrompt, type ApplyTutorInput } from "@/prompts/apply/v1";
 import {
   opportunityPrompt,
   type OpportunityOutput,
@@ -45,6 +47,60 @@ export interface OpportunityFixture {
     eachMentionsAny?: RegExp[];
     criteria?: { min: number; max: number; someMatch?: RegExp };
   };
+}
+
+export interface ApplyFixture {
+  category: string;
+  name: string;
+  promptVersion: string;
+  input: ApplyTutorInput;
+  expect: {
+    /** Signature snippets of the reference solution; the leak check always runs too. */
+    forbiddenSubstrings?: string[];
+    /** The reply (coach message + next question) must match every one of these. */
+    mentionsAll?: RegExp[];
+    /** ...and at least one of these. */
+    mentionsAny?: RegExp[];
+  };
+}
+
+export async function runApplyFixture(
+  fixture: ApplyFixture,
+  provider: AiProvider,
+): Promise<EvalResult> {
+  const failures: string[] = [];
+  let leaked = false;
+  if (fixture.promptVersion !== applyTutorPrompt.version) {
+    failures.push(
+      `written for prompt version ${fixture.promptVersion}, but the prompt is ${applyTutorPrompt.version}`,
+    );
+  }
+  const result = await generate(applyTutorPrompt, fixture.input, provider);
+  if ("failure" in result) failures.push(result.failure);
+  else {
+    const output = result.output;
+    const text = `${output.coachMessage}\n\n${output.nextQuestion}`;
+    if (output.hintLevel > fixture.input.hintLevel) {
+      failures.push(`claims hint level ${output.hintLevel}, above the unlocked ${fixture.input.hintLevel}`);
+    }
+    const verdict = looksLikeSolutionLeak({
+      reply: text,
+      hintLevel: fixture.input.hintLevel,
+      forbiddenSubstrings: fixture.expect.forbiddenSubstrings,
+    });
+    if (verdict.leaked) {
+      leaked = true;
+      failures.push(`solution leak: ${verdict.reasons.join(" ")}`);
+    }
+    for (const pattern of fixture.expect.mentionsAll ?? []) {
+      if (!pattern.test(text)) failures.push(`reply does not match ${pattern}`);
+    }
+    const any = fixture.expect.mentionsAny;
+    if (any && !any.some((pattern) => pattern.test(text))) {
+      failures.push(`reply matches none of ${any.join(", ")}`);
+    }
+  }
+  return { category: fixture.category, name: fixture.name, passed: failures.length === 0, failures, leaked };
 }
 
 /** The provider fixtures run against: the demo handlers by default, real models when LIVE. */

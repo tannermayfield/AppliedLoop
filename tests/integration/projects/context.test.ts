@@ -153,9 +153,9 @@ describe("project context snapshots", () => {
 
     it("answers NOT_FOUND for a missing or malformed project id", async () => {
       const alice = await app.makeUser();
-      await expect(putProjectContext(alice.ctx, MISSING_ID, { summary: "x" })).rejects.toBeInstanceOf(
-        NotFoundError,
-      );
+      await expect(
+        putProjectContext(alice.ctx, MISSING_ID, { summary: "x" }),
+      ).rejects.toBeInstanceOf(NotFoundError);
       await expect(putProjectContext(alice.ctx, "nope", { summary: "x" })).rejects.toBeInstanceOf(
         NotFoundError,
       );

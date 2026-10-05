@@ -140,7 +140,9 @@ describe("/api/v1/concepts", () => {
       expect(next.body.data.map((c: { name: string }) => c.name)).toEqual(["Concept 1"]);
       expect(next.body.meta.nextCursor).toBeNull();
 
-      const applied = await callRoute(LIST, { url: "/api/v1/concepts?stage=APPLIED&search=concept" });
+      const applied = await callRoute(LIST, {
+        url: "/api/v1/concepts?stage=APPLIED&search=concept",
+      });
       expect(applied.body.data.map((c: { name: string }) => c.name)).toEqual(["Concept 2"]);
     });
 

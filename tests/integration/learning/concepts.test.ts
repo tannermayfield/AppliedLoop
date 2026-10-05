@@ -447,9 +447,9 @@ describe("concepts", () => {
     it("answers NOT_FOUND for a project filter that is someone else's", async () => {
       const [alice, bob] = [await app.makeUser(), await app.makeUser()];
       const bobsProject = await insertProject(app.db, bob.id);
-      await expect(
-        listConcepts(alice.ctx, { projectId: bobsProject.id }),
-      ).rejects.toBeInstanceOf(NotFoundError);
+      await expect(listConcepts(alice.ctx, { projectId: bobsProject.id })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
     });
 
     it("returns nothing, and leaks nothing, when filtering by another student's source", async () => {
@@ -489,9 +489,9 @@ describe("concepts", () => {
       await expect(listConcepts(alice.ctx, { cursor: "garbage" })).rejects.toBeInstanceOf(
         ValidationError,
       );
-      await expect(
-        listConcepts(alice.ctx, { stage: "MASTERED" as never }),
-      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(listConcepts(alice.ctx, { stage: "MASTERED" as never })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
     });
 
     it("shows a concept without a progress row as Exposed instead of hiding it", async () => {
@@ -642,9 +642,10 @@ describe("concepts", () => {
       expect(
         await updateConcept(alice.ctx, concept.id, { learningSourceId: second.id }),
       ).toMatchObject({ learningSourceId: second.id, sourceTitle: "IS 403" });
-      expect(await updateConcept(alice.ctx, concept.id, { learningSourceId: null })).toMatchObject(
-        { learningSourceId: null, sourceTitle: null },
-      );
+      expect(await updateConcept(alice.ctx, concept.id, { learningSourceId: null })).toMatchObject({
+        learningSourceId: null,
+        sourceTitle: null,
+      });
     });
 
     it("answers NOT_FOUND for another student's source and changes nothing", async () => {

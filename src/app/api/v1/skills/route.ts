@@ -12,6 +12,9 @@ export const GET = apiRoute(async ({ c, url }) => {
   return new Paged(await listSkills(c, parseQuery(url, listSkillsQuery)));
 });
 
-export const POST = apiRoute(async ({ c, req }) => createSkill(c, await parseBody(req, createSkillInput)), {
-  status: 201,
-});
+export const POST = apiRoute(
+  async ({ c, req }) => createSkill(c, await parseBody(req, createSkillInput)),
+  {
+    status: 201,
+  },
+);

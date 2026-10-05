@@ -1,5 +1,11 @@
 import "server-only";
-import { generateText, Output, type LanguageModel } from "ai";
+import {
+  generateText,
+  NoObjectGeneratedError,
+  NoOutputGeneratedError,
+  Output,
+  type LanguageModel,
+} from "ai";
 import type { Env } from "../env";
 import { AiUnavailableError } from "../errors";
 import type { AiProvider, AiPurpose, ModelRequest, ModelResponse } from "./types";
@@ -37,20 +43,29 @@ export class GatewayAiProvider implements AiProvider {
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
     const model = this.config.resolveModel?.(request.model) ?? request.model;
-    const result = await generateText({
-      model,
-      system: request.system,
-      prompt: request.prompt,
-      output: Output.object({ schema: request.schema }),
-      timeout: request.timeoutMs,
-      maxRetries: 1,
-    });
-    return {
-      object: result.output,
-      usage: {
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-      },
-    };
+    try {
+      const result = await generateText({
+        model,
+        system: request.system,
+        prompt: request.prompt,
+        output: Output.object({ schema: request.schema }),
+        timeout: request.timeoutMs,
+        maxRetries: 1,
+      });
+      return {
+        object: result.output,
+        usage: {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+        },
+      };
+    } catch (error) {
+      // The model answered, but not in the requested shape. That is "invalid output", not
+      // "provider unavailable": hand `undefined` back so `runAi` records INVALID_OUTPUT and retries.
+      if (NoObjectGeneratedError.isInstance(error) || NoOutputGeneratedError.isInstance(error)) {
+        return { object: undefined, usage: {} };
+      }
+      throw error;
+    }
   }
 }

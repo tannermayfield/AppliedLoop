@@ -25,7 +25,10 @@ describe("/api/v1/projects", () => {
     setRouteContext(null);
   });
 
-  const at = (id: string, extra = "") => ({ url: `/api/v1/projects/${id}${extra}`, params: { id } });
+  const at = (id: string, extra = "") => ({
+    url: `/api/v1/projects/${id}${extra}`,
+    params: { id },
+  });
 
   it("answers 401 for every endpoint when signed out", async () => {
     const responses = await Promise.all([
@@ -195,10 +198,7 @@ describe("/api/v1/projects", () => {
       ]);
 
       const longForm = await post({
-        skills: [
-          { skillId: node.id },
-          { skillId: sql.id, relationshipType: "DEMONSTRATED" },
-        ],
+        skills: [{ skillId: node.id }, { skillId: sql.id, relationshipType: "DEMONSTRATED" }],
       });
       expect(longForm.status).toBe(201);
       expect(

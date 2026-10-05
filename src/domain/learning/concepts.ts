@@ -406,10 +406,7 @@ export async function listConcepts(c: AppContext, raw: ListConceptsQuery = {}) {
     const after = decodeCursor(query.cursor, cursorSchema);
     const at = new Date(after.t);
     conditions.push(
-      or(
-        lt(concepts.capturedAt, at),
-        and(eq(concepts.capturedAt, at), lt(concepts.id, after.id)),
-      )!,
+      or(lt(concepts.capturedAt, at), and(eq(concepts.capturedAt, at), lt(concepts.id, after.id)))!,
     );
   }
 

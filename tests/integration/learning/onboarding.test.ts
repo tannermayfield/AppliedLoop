@@ -17,7 +17,9 @@ describe("onboarding", () => {
   beforeEach(() => app.reset());
 
   const eventNames = async () =>
-    (await app.db.select({ name: eventLog.eventName }).from(eventLog)).map((row) => row.name).sort();
+    (await app.db.select({ name: eventLog.eventName }).from(eventLog))
+      .map((row) => row.name)
+      .sort();
   const onboardingEvents = () =>
     app.db.select().from(eventLog).where(eq(eventLog.eventName, "onboarding_completed"));
   const profileOf = async (userId: string) =>

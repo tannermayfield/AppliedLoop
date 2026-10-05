@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
 import type { AuthzCase } from "./harness";
