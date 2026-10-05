@@ -337,7 +337,11 @@ export async function getProjectSummary(
     .from(evidenceItems)
     .where(and(eq(evidenceItems.projectId, id), ownedBy(evidenceItems.userId, c.auth)));
   const recentEvidence = await c.db
-    .select({ id: evidenceItems.id, title: evidenceItems.title, createdAt: evidenceItems.createdAt })
+    .select({
+      id: evidenceItems.id,
+      title: evidenceItems.title,
+      createdAt: evidenceItems.createdAt,
+    })
     .from(evidenceItems)
     .where(and(eq(evidenceItems.projectId, id), ownedBy(evidenceItems.userId, c.auth)))
     .orderBy(desc(evidenceItems.createdAt), desc(evidenceItems.id))
@@ -464,7 +468,11 @@ export async function setProjectSkills(
       await tx.db
         .insert(projectSkills)
         .values(
-          typed.map(([skillId, relationshipType]) => ({ projectId: id, skillId, relationshipType })),
+          typed.map(([skillId, relationshipType]) => ({
+            projectId: id,
+            skillId,
+            relationshipType,
+          })),
         )
         .onConflictDoUpdate({
           target: [projectSkills.projectId, projectSkills.skillId],

@@ -505,13 +505,36 @@ export async function completeSession(
         updatedAt: now,
         ...(input.summary !== undefined && { summary: input.summary }),
         ...(input.notes !== undefined && { notes: input.notes }),
+        ...(current.type === "APPLY" && input.reflection && { reflectionJson: input.reflection }),
       })
       .where(and(eq(sessions.id, current.id), ownedBy(sessions.userId, tx.auth)))
       .returning();
-    await emit(tx, "build_session_completed", { entityType: "session", entityId: updated.id });
+    if (updated.type === "APPLY") {
+      const durationMs = now.getTime() - updated.startedAt.getTime();
+      await emit(tx, "apply_session_completed", {
+        entityType: "session",
+        entityId: updated.id,
+        metadata: {
+          duration_s: Math.max(0, Math.round(durationMs / 1000)),
+          hint_level: updated.hintLevel,
+        },
+      });
+    } else {
+      await emit(tx, "build_session_completed", { entityType: "session", entityId: updated.id });
+    }
     return updated;
   });
-  return { session: toSessionDto(row), suggestedStage: null };
+  return { session: toSessionDto(row), suggestedStage: await suggestedStageFor(c, row) };
+}
+
+/**
+ * APPLY only: "APPLIED" while the concept is below Applied, else null. A suggestion for the
+ * student to confirm (PATCH /concepts/:id/progress); nothing here changes the stage.
+ */
+async function suggestedStageFor(c: AppContext, row: SessionRow): Promise<ConceptStage | null> {
+  if (row.type !== "APPLY" || !row.conceptId) return null;
+  const { stage } = await loadOwnedConcept(c, row.conceptId);
+  return CONCEPT_STAGES.indexOf(stage) < CONCEPT_STAGES.indexOf("APPLIED") ? "APPLIED" : null;
 }
 
 /** ACTIVE → ABANDONED, an explicit "set aside" by the student. The record is kept. */

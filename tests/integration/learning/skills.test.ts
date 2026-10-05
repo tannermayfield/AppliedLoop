@@ -26,8 +26,16 @@ describe("skills", () => {
     it("shows the shared catalog plus the caller's own custom skills, never anyone else's", async () => {
       const [alice, bob] = [await app.makeUser(), await app.makeUser()];
       await insertSkill(app.db, { name: "SQL", category: "Languages" });
-      await insertSkill(app.db, { name: "Alice's Craft", category: "Practices", ownerUserId: alice.id });
-      await insertSkill(app.db, { name: "Bob's Craft", category: "Practices", ownerUserId: bob.id });
+      await insertSkill(app.db, {
+        name: "Alice's Craft",
+        category: "Practices",
+        ownerUserId: alice.id,
+      });
+      await insertSkill(app.db, {
+        name: "Bob's Craft",
+        category: "Practices",
+        ownerUserId: bob.id,
+      });
 
       const names = (await listSkills(alice.ctx)).map((skill) => skill.name);
 
@@ -189,12 +197,8 @@ describe("skills", () => {
 
     it("rejects an empty name, or one with no letters or numbers", async () => {
       const alice = await app.makeUser();
-      await expect(createSkill(alice.ctx, { name: "   " })).rejects.toBeInstanceOf(
-        ValidationError,
-      );
-      await expect(createSkill(alice.ctx, { name: "???" })).rejects.toBeInstanceOf(
-        ValidationError,
-      );
+      await expect(createSkill(alice.ctx, { name: "   " })).rejects.toBeInstanceOf(ValidationError);
+      await expect(createSkill(alice.ctx, { name: "???" })).rejects.toBeInstanceOf(ValidationError);
       await expect(createSkill(alice.ctx, { name: "x".repeat(61) })).rejects.toBeInstanceOf(
         ValidationError,
       );
@@ -208,7 +212,9 @@ describe("skills", () => {
       const own = await insertSkill(app.db, { name: "Mine", ownerUserId: alice.id });
 
       await expect(assertSkillsAccessible(alice.ctx, [shared.id, own.id])).resolves.toBeUndefined();
-      await expect(assertSkillsAccessible(alice.ctx, [shared.id, shared.id])).resolves.toBeUndefined();
+      await expect(
+        assertSkillsAccessible(alice.ctx, [shared.id, shared.id]),
+      ).resolves.toBeUndefined();
       await expect(assertSkillsAccessible(alice.ctx, [])).resolves.toBeUndefined();
     });
 

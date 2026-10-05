@@ -62,6 +62,24 @@ describe("GatewayAiProvider", () => {
     expect(seen).toEqual(["anything/at-all"]);
   });
 
+  it("treats a malformed model answer as invalid output (undefined), not as a provider failure", async () => {
+    const provider = new GatewayAiProvider({
+      models: { CAPTURE: "x/y" },
+      rateLimitPerHour: 5,
+      resolveModel: () => mockModel({ wrong: "shape" }),
+    });
+    const response = await provider.generate({
+      purpose: "CAPTURE",
+      model: "x/y",
+      system: "s",
+      prompt: "p",
+      schema: z.object({ answer: z.string() }),
+      input: {},
+      timeoutMs: 5_000,
+    });
+    expect(response.object).toBeUndefined();
+  });
+
   it("names the missing environment variable when a model is not configured", () => {
     const provider = new GatewayAiProvider({ models: {}, rateLimitPerHour: 5 });
     expect(() => provider.modelFor("TUTOR")).toThrow(AiUnavailableError);

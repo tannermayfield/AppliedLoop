@@ -1,4 +1,8 @@
 import { eq } from "drizzle-orm";
+import { requestHint } from "@/domain/sessions/apply/hints";
+import { switchToBuild } from "@/domain/sessions/apply/switch";
+import { tutorReply } from "@/domain/sessions/apply/tutor";
+import { ScriptedAiProvider } from "@/test/ai";
 import {
   abandonSession,
   completeSession,
@@ -7,7 +11,7 @@ import {
   getSession,
   updateSessionNotes,
 } from "@/domain/sessions/sessions";
-import { practiceOpportunities, sessions } from "@/lib/db/schema";
+import { practiceOpportunities, sessionMessages, sessions } from "@/lib/db/schema";
 import type { TestApp } from "@/test/app";
 import { insertConcept, insertProject, insertSession } from "@/test/factories";
 import { insertApplySetup, insertOpportunity } from "@/test/factories-sessions";
@@ -65,6 +69,48 @@ const cases = [
     attempt: (_app, caller, id) => updateSessionNotes(caller.ctx, id, "hijacked"),
     verifyUntouched: async (app, _owner, id) => {
       if ((await sessionRow(app, id)).notes !== "mine") throw new Error("Notes were changed");
+    },
+  }),
+  authzCase({
+    name: "apply/hints.requestHint",
+    arrange: async (app, owner) => (await insertApplySetup(app.db, owner.id)).session.id,
+    attempt: (_app, caller, id) => requestHint(caller.ctx, id),
+    verifyUntouched: async (app, _owner, id) => {
+      if ((await sessionRow(app, id)).hintLevel !== 0) throw new Error("Hint level was raised");
+    },
+  }),
+  authzCase({
+    name: "apply/tutor.tutorReply",
+    arrange: async (app, owner) => (await insertApplySetup(app.db, owner.id)).session.id,
+    attempt: (_app, caller, id) =>
+      tutorReply(
+        {
+          ...caller.ctx,
+          ai: new ScriptedAiProvider().enqueue("TUTOR", {
+            coachMessage: "What would you try first?",
+            hintLevel: 0,
+            nextQuestion: "Why?",
+            observations: [],
+            suggestedProgress: null,
+          }),
+        },
+        id,
+        { message: "hi" },
+      ),
+    verifyUntouched: async (app, _owner, id) => {
+      const messages = await app.db
+        .select()
+        .from(sessionMessages)
+        .where(eq(sessionMessages.sessionId, id));
+      if (messages.length > 0) throw new Error("A message was added to someone else's session");
+    },
+  }),
+  authzCase({
+    name: "apply/switch.switchToBuild",
+    arrange: async (app, owner) => (await insertApplySetup(app.db, owner.id)).session.id,
+    attempt: (_app, caller, id) => switchToBuild(caller.ctx, id),
+    verifyUntouched: async (app, _owner, id) => {
+      if ((await sessionRow(app, id)).status !== "ACTIVE") throw new Error("Session was switched");
     },
   }),
   authzCase({

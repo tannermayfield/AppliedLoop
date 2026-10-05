@@ -7,7 +7,7 @@ import {
   updateConcept,
 } from "@/domain/learning/concepts";
 import { changeStage, getStageHistory } from "@/domain/learning/progress";
-import { conceptSkills, concepts, progressEvents } from "@/lib/db/schema";
+import { conceptSkills, concepts, progressEvents, sessions } from "@/lib/db/schema";
 import type { TestApp } from "@/test/app";
 import {
   insertConcept,
@@ -97,7 +97,10 @@ const cases = [
       return updateConcept(caller.ctx, mine.id, { learningSourceId: sourceId });
     },
     verifyUntouched: async (app, _owner, sourceId) => {
-      const rows = await app.db.select().from(concepts).where(eq(concepts.learningSourceId, sourceId));
+      const rows = await app.db
+        .select()
+        .from(concepts)
+        .where(eq(concepts.learningSourceId, sourceId));
       if (rows.length > 0) throw new Error("A concept was attached to another user's source");
     },
   }),
@@ -127,11 +130,20 @@ const cases = [
         })
       ).id;
     },
-    // Only the session's owner is under test here (the provenance rules for each source are in
-    // progress.test.ts), so the change itself is an ordinary one by the student.
+    // Recording a change "from a completed Apply session" is the only path that accepts a session
+    // id. The caller targets the session's own concept when it is theirs, otherwise a concept of
+    // their own, so a stranger is stopped by the SESSION lookup (not by the concept lookup).
     attempt: async (app, caller, sessionId) => {
-      const mine = await insertConcept(app.db, caller.id, { name: "Mine" });
-      return changeStage(caller.ctx, mine.id, { stage: "PRACTICED", sessionId });
+      const [session] = await app.db.select().from(sessions).where(eq(sessions.id, sessionId));
+      const owned = session.userId === caller.id;
+      const target = owned
+        ? { id: session.conceptId! }
+        : await insertConcept(app.db, caller.id, { name: "Mine" });
+      return changeStage(caller.ctx, target.id, {
+        stage: "APPLIED",
+        source: "APPLY_COMPLETION",
+        sessionId,
+      });
     },
     verifyUntouched: async (app) => {
       if ((await app.db.select().from(progressEvents)).length > 0) {

@@ -15,7 +15,7 @@ import {
   type ConceptStage,
   type ProgressSource,
 } from "@/lib/db/schema/enums";
-import { ConflictError, parseOrThrow } from "@/lib/errors";
+import { ConflictError, ValidationError, parseOrThrow } from "@/lib/errors";
 import { ownedBy, requireRow } from "@/lib/ownership";
 import { emit } from "@/lib/telemetry/emit";
 import { idOrNotFound } from "./skills";
@@ -70,7 +70,11 @@ export const changeStageInput = z.object({
 export type ChangeStageInput = z.input<typeof changeStageInput>;
 
 /** Stages that count as the student having just worked with the concept. */
-const PRACTICE_STAGES: ReadonlySet<ConceptStage> = new Set(["PRACTICED", "APPLIED", "DEMONSTRATED"]);
+const PRACTICE_STAGES: ReadonlySet<ConceptStage> = new Set([
+  "PRACTICED",
+  "APPLIED",
+  "DEMONSTRATED",
+]);
 
 /**
  * `PATCH /concepts/:id/progress`. Moves a concept to `stage` when the rules allow it.
@@ -133,6 +137,30 @@ export async function changeStage(
         throw new ConflictError(
           "A completed Apply session for this concept is needed to record this change.",
         );
+      }
+    }
+    // A session id only means something on the change that records its completion; elsewhere it
+    // would attach this concept's history to an unrelated session and skew the metrics.
+    if (input.sessionId && input.source !== "APPLY_COMPLETION") {
+      throw new ValidationError(
+        "A session can only be attached to a change recorded from its completion.",
+      );
+    }
+    if (input.source === "APPLY_COMPLETION") {
+      // One completed Apply session records its stage change once (no replaying it for credit).
+      const [{ recorded }] = await tx.db
+        .select({ recorded: count() })
+        .from(progressEvents)
+        .where(
+          and(
+            eq(progressEvents.sessionId, input.sessionId!),
+            eq(progressEvents.conceptId, id),
+            eq(progressEvents.source, "APPLY_COMPLETION"),
+            ownedBy(progressEvents.userId, tx.auth),
+          ),
+        );
+      if (recorded > 0) {
+        throw new ConflictError("This Apply session has already recorded its stage change.");
       }
     }
     if (input.source === "EVIDENCE" && evidenceCount < 1) {

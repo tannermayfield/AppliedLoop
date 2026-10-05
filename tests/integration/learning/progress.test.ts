@@ -31,7 +31,9 @@ describe("concept stage changes", () => {
   const historyRows = (conceptId: string) =>
     app.db.select().from(progressEvents).where(eq(progressEvents.conceptId, conceptId));
   const progressRow = async (conceptId: string) =>
-    (await app.db.select().from(conceptProgress).where(eq(conceptProgress.conceptId, conceptId)))[0];
+    (
+      await app.db.select().from(conceptProgress).where(eq(conceptProgress.conceptId, conceptId))
+    )[0];
 
   /** A failed change must leave no trace: same stage, no history row, no telemetry. */
   async function expectNothingWritten(conceptId: string, stage: ConceptStage) {
@@ -278,7 +280,8 @@ describe("concept stage changes", () => {
             stage: "COMFORTABLE",
             selfAttest: true,
             source,
-            sessionId: apply.id,
+            // A session id is only accepted on the change that records its completion.
+            ...(source === "APPLY_COMPLETION" && { sessionId: apply.id }),
           }),
         ).rejects.toBeInstanceOf(ConflictError);
         await expectNothingWritten(concept.id, "LEARNED");
@@ -321,6 +324,44 @@ describe("concept stage changes", () => {
         to: "APPLIED",
         source: "APPLY_COMPLETION",
       });
+    });
+
+    it("records one stage change per completed Apply session; replaying it for credit is a conflict", async () => {
+      const alice = await app.makeUser();
+      const concept = await insertConcept(app.db, alice.id);
+      const session = await applySession(alice.id, concept.id);
+      const apply = { reason: "Completed Apply session", source: "APPLY_COMPLETION" as const };
+
+      await changeStage(alice.ctx, concept.id, {
+        stage: "APPLIED",
+        sessionId: session.id,
+        ...apply,
+      });
+      await changeStage(alice.ctx, concept.id, { stage: "PRACTICED", reason: "stepping back" });
+
+      await expect(
+        changeStage(alice.ctx, concept.id, { stage: "APPLIED", sessionId: session.id, ...apply }),
+      ).rejects.toBeInstanceOf(ConflictError);
+      const credited = (await historyRows(concept.id)).filter(
+        (event) => event.source === "APPLY_COMPLETION",
+      );
+      expect(credited).toHaveLength(1);
+    });
+
+    it("does not let a session id ride along on a change that isn't its completion", async () => {
+      const alice = await app.makeUser();
+      const concept = await insertConcept(app.db, alice.id);
+      const other = await insertConcept(app.db, alice.id, { name: "Joins" });
+      const session = await applySession(alice.id, other.id);
+
+      await expect(
+        changeStage(alice.ctx, concept.id, {
+          stage: "PRACTICED",
+          source: "USER",
+          sessionId: session.id,
+        }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expectNothingWritten(concept.id, "LEARNED");
     });
 
     it("rejects APPLY_COMPLETION without a session", async () => {
@@ -408,18 +449,15 @@ describe("concept stage changes", () => {
       await expectNothingWritten(concept.id, "LEARNED");
     });
 
-    it("stores the session on a USER change when it is the student's own", async () => {
+    it("refuses a session id on a USER change (it would attach this concept to unrelated work)", async () => {
       const alice = await app.makeUser();
       const concept = await insertConcept(app.db, alice.id);
       const session = await applySession(alice.id, concept.id, { status: "ACTIVE" });
 
-      await changeStage(alice.ctx, concept.id, {
-        stage: "PRACTICED",
-        sessionId: session.id,
-      });
-
-      const [event] = await historyRows(concept.id);
-      expect(event).toMatchObject({ source: "USER", sessionId: session.id });
+      await expect(
+        changeStage(alice.ctx, concept.id, { stage: "PRACTICED", sessionId: session.id }),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expectNothingWritten(concept.id, "LEARNED");
     });
 
     it("accepts EVIDENCE only when evidence is linked to the concept", async () => {
@@ -463,9 +501,9 @@ describe("concept stage changes", () => {
 
     it("answers NOT_FOUND for a missing or malformed concept id", async () => {
       const alice = await app.makeUser();
-      await expect(
-        changeStage(alice.ctx, MISSING_ID, { stage: "APPLIED" }),
-      ).rejects.toBeInstanceOf(NotFoundError);
+      await expect(changeStage(alice.ctx, MISSING_ID, { stage: "APPLIED" })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
       await expect(
         changeStage(alice.ctx, "not-a-uuid", { stage: "APPLIED" }),
       ).rejects.toBeInstanceOf(NotFoundError);

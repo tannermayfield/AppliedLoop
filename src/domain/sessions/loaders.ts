@@ -11,6 +11,7 @@ import {
   projects,
   sessions,
   skills,
+  CONCEPT_STAGES,
   type ConceptStage,
   type OpportunityDifficulty,
   type OpportunityStatus,
@@ -211,6 +212,66 @@ export async function toPromptProject(c: AppContext, project: ProjectRow): Promi
         }
       : null,
   };
+}
+
+// ── Choices for the /apply/new picker ────────────────────────────────────────────────────────────
+
+export interface ConceptChoice {
+  id: string;
+  name: string;
+  stage: ConceptStage;
+  sourceTitle: string | null;
+}
+
+/** The caller's concepts: those below APPLIED first, newest first within each group. */
+export async function listConceptChoices(c: AppContext): Promise<ConceptChoice[]> {
+  const rows = await c.db
+    .select({
+      id: concepts.id,
+      name: concepts.name,
+      stage: conceptProgress.stage,
+      sourceTitle: learningSources.title,
+      capturedAt: concepts.capturedAt,
+    })
+    .from(concepts)
+    .leftJoin(
+      conceptProgress,
+      and(eq(conceptProgress.conceptId, concepts.id), ownedBy(conceptProgress.userId, c.auth)),
+    )
+    .leftJoin(
+      learningSources,
+      and(
+        eq(learningSources.id, concepts.learningSourceId),
+        ownedBy(learningSources.userId, c.auth),
+      ),
+    )
+    .where(ownedBy(concepts.userId, c.auth))
+    .orderBy(desc(concepts.capturedAt));
+  const applied = CONCEPT_STAGES.indexOf("APPLIED");
+  const choices = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    stage: row.stage ?? ("EXPOSED" as const),
+    sourceTitle: row.sourceTitle,
+  }));
+  const below = choices.filter((choice) => CONCEPT_STAGES.indexOf(choice.stage) < applied);
+  const rest = choices.filter((choice) => CONCEPT_STAGES.indexOf(choice.stage) >= applied);
+  return [...below, ...rest];
+}
+
+export interface ProjectChoice {
+  id: string;
+  name: string;
+  aiEnabled: boolean;
+}
+
+/** The caller's ACTIVE projects, most recently updated first. */
+export async function listProjectChoices(c: AppContext): Promise<ProjectChoice[]> {
+  return c.db
+    .select({ id: projects.id, name: projects.name, aiEnabled: projects.aiEnabled })
+    .from(projects)
+    .where(and(ownedBy(projects.userId, c.auth), eq(projects.status, "ACTIVE")))
+    .orderBy(desc(projects.updatedAt));
 }
 
 // ── Practice opportunities as the API returns them ──────────────────────────────────────────────

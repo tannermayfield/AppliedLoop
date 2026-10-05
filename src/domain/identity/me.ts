@@ -1,4 +1,4 @@
-﻿import { eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "@/lib/context";
 import { userProfiles, users } from "@/lib/db/schema";

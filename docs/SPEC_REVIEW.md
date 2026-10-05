@@ -196,10 +196,10 @@ Onboarding offers "I'm starting one" but nothing else differs. **Proposed (v0):*
 | Finding | Decision | Date | Folded into docs? |
 |---|---|---|---|
 | R-01 to R-06, R-08, R-10 to R-17, R-20, R-23, R-24 | **Approved** as proposed (batch) | 2026-10-05 | Approved; items tagged **[proposed]** in DATA_MODEL.md / API.md / ACCEPTANCE_TESTS.md are now authoritative. Textual merge into SPEC.md happens in the Slice 0 plan |
-| R-07 (D-1) | **Approved:** no in-app Build chat in v0; context pack with agent preamble | 2026-10-05 | Pending merge |
-| R-09 (D-3) | **Approved:** spec order, one card per type, `RECENT_DAYS = 14`; owner writes the ranking function at T12 | 2026-10-05 | Pending merge |
-| R-12 (D-4) | **Approved:** keep messages until the student deletes; no raw prompts stored; per-project AI-off switch | 2026-10-05 | Pending merge |
-| R-18 (D-2) | **Approved:** any stage allowed and logged; AI only suggests; `DEMONSTRATED` needs evidence; `COMFORTABLE` self-attested | 2026-10-05 | Pending merge |
-| R-19 (D-5) | **Approved:** evidence always tied to a project | 2026-10-05 | Pending merge |
-| R-21 (D-7) | **Approved:** UI label "Needs Review" | 2026-10-05 | Pending merge |
-| R-22 (D-6) | **Approved:** starter milestone only | 2026-10-05 | Pending merge |
+| R-07 (D-1) | **Approved:** no in-app Build chat in v0; context pack with agent preamble | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-09 (D-3) | **Approved:** spec order, one card per type, `RECENT_DAYS = 14`; owner writes the ranking function at T12 | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-12 (D-4) | **Approved:** keep messages until the student deletes; no raw prompts stored; per-project AI-off switch | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-18 (D-2) | **Approved:** any stage allowed and logged; AI only suggests; `DEMONSTRATED` needs evidence; `COMFORTABLE` self-attested | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-19 (D-5) | **Approved:** evidence always tied to a project | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-21 (D-7) | **Approved:** UI label "Needs Review" | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |
+| R-22 (D-6) | **Approved:** starter milestone only | 2026-10-05 | Built and merged into the docs and ADRs 0005-0010 |

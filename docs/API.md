@@ -252,3 +252,54 @@ Server-emitted unless marked *(client)*. Every event carries `user_id`, an `enti
 | `ai_run_failed` | AI call failed or output invalid | `purpose`, `status` | AI reliability |
 
 North-star "transfer" = a `concept_stage_changed` into `APPLIED` or later, from below `APPLIED`, tied to a **COMPLETED** `APPLY` session (not `SWITCHED`), with an `evidence_created` linked to that session.
+
+## Implemented additions (v0 build, 2026-10-05)
+
+The endpoints and payload details below exist in the code and are covered by route tests. They extend the table above without changing it.
+
+**Learning and projects**
+
+| Endpoint | Notes |
+|---|---|
+| `POST /concepts/bulk` | Body `{ items[], via: "CAPTURE" \| "MANUAL", editedBeforeConfirm? }` → `{ created[], skipped[{ name, existingConceptId }] }`. Duplicates are skipped; any other validation error rejects the whole call atomically. |
+| `GET /concepts/:id` · `GET /concepts/:id/progress` | Detail with skills, and the immutable stage history (oldest first). |
+| `GET /concepts?projectId=` | Concepts sharing a skill with the project (a foreign project is 404). |
+| `PATCH /concepts/:id/progress` | Body `{ stage, reason?, selfAttest?, source?: USER \| APPLY_COMPLETION \| EVIDENCE, sessionId? }` → `{ conceptId, from, to, changed }`. Provenance is validated server-side; `COMFORTABLE` needs `selfAttest` and `source = USER`; `DEMONSTRATED` needs linked evidence. |
+| `POST /concepts/capture` | Candidates also carry `existingConceptId: string \| null`. Saves nothing. |
+| `DELETE /projects/:id/skills/:skillId` · `GET /projects/:id/context` | Remove a skill link; latest context snapshot or `null`. `POST /projects/:id/skills` accepts `{ skills: [{ skillId, relationshipType? }] }` or `{ skillIds, relationshipType? }`. |
+| `POST /onboarding` | 201 the first time, 200 `{ alreadyCompleted: true }` afterwards. |
+
+Duplicate concept or rename clash → `details: { existingConceptId }`; duplicate skill → `details: { existingSkillId }`.
+
+**Sessions and Apply**
+
+| Endpoint | Notes |
+|---|---|
+| `GET /sessions` | Filters `projectId`, `type`, `status`, `limit`, `cursor`; newest first; items include `projectName`, `conceptName`. |
+| `GET /sessions/:id` | Adds `project`, `concept`, `opportunity`, `messages`, `switchedToSessionId`. |
+| `POST /sessions/:id/messages` | Body `{ message }` (max 20,000 chars) → `{ userMessage, reply, hintLevel, fallback }`. APPLY sessions only (409 otherwise). Model `observations` are never exposed. |
+| `POST /sessions/:id/hints` · `/switch-to-build` · `/abandon` · `PATCH /sessions/:id/notes` · `DELETE /sessions/:id` | Hint ladder (+1, max 3), explicit mode switch (returns the new BUILD session, 201), discard, notes autosave, hard delete. |
+| `POST /apply/opportunities` | 201; returns `{ opportunities[], noGoodFitReason }`. |
+| `POST /apply/opportunities/manual` · `PATCH /apply/opportunities/:id` | The AI-off / no-good-fit path; `{ status: "DISCARDED" }`. |
+| `POST /sessions/:id/complete` | Idempotent. Returns `{ session, suggestedStage }` (a suggestion only). |
+
+**Build and extraction**
+
+| Endpoint | Notes |
+|---|---|
+| `POST /sessions/:id/context-pack` | Replaces `POST /build/:sessionId/context-pack` (R-15). Body `{ target?: CODEX \| CLAUDE_CODE \| GENERIC }`. |
+| `POST /extractions` | 201 when new, 200 when it already existed (idempotent; completes an ACTIVE build session first). Items carry `evidenceRefs[]`, `selfAssessmentQuestion`, `existingConceptId` (R-04). |
+| `GET /extractions/:id` · `GET /sessions/:id/extraction` | The latter returns `null` when none exists. |
+| `PATCH /extractions/:id/items/:itemId` | Returns `{ item, debt }`. |
+| `GET /learning-debt` | With no `status`, the active queue (OPEN and PLANNED). |
+
+**Evidence, Today, events**
+
+| Endpoint | Notes |
+|---|---|
+| `GET /evidence/prefill?sessionId=` | Prefill from a COMPLETED APPLY session (409 otherwise) or any BUILD session; includes `description`. |
+| `POST /evidence` | 201 `{ evidence, suggestedAdvances[] }`. Contribution type is required and never inferred. Artifact rules: `PR`/`URL` need an http(s) URL, `COMMIT`/`FILE` free text, `NOTE` no link. Filters on `GET /evidence`: `skillId`, `projectId`, `conceptId`, `search`, `limit`, `cursor`. |
+| `GET /today` | `{ greetingName, timezone, cards[], needsReview { count, top[] }, hasSource, hasProject, hasConcepts }`. Emits `today_viewed`. |
+| `POST /events` | 202 `{ data: { accepted: true } }`; body `{ name, entityType?, entityId?, metadata? (under 2 KB) }`; `name` must be a client event. |
+
+KPI SQL lives in `scripts/kpi/` (see its README); the page `/evidence/[id]/edit` reuses the evidence form.

@@ -133,6 +133,12 @@ describe("apiRoute cross-site guard", () => {
     expect(res.body.error.code).toBe("FORBIDDEN");
   });
 
+  it("treats an unparseable Origin (such as the literal 'null') as cross-site: 403, not 500", async () => {
+    const res = await callRoute(POST, { body: {}, headers: { origin: "null", host: "localhost" } });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN");
+  });
+
   it("allows a mutation from the same origin", async () => {
     const res = await callRoute(POST, {
       body: {},

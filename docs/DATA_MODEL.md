@@ -203,3 +203,16 @@ Each row is a delta to the tables above. IDs refer to [SPEC_REVIEW.md](SPEC_REVI
 | `sessions` | `evidence_items.session_id`, `learning_debt_items.source_session_id` | `SET NULL` (history survives) |
 | `extraction_items` | `learning_debt_items.extraction_item_id` | `SET NULL` |
 | `concepts` | `evidence_concepts`, `learning_debt_items` | `RESTRICT` while evidence or debt exists; otherwise cascade `concept_skills`, `concept_progress`, `progress_events` |
+
+## Implementation notes (v0 build, 2026-10-05)
+
+Where the code differs from, or adds to, the tables above. **These supersede the earlier "Cascade policy [proposed]" table.**
+
+- **Foreign keys between user-owned tables use `ON DELETE CASCADE` / `SET NULL`, never `NO ACTION`.** PostgreSQL checks `NO ACTION` per cascade step, so a user delete failed depending on cascade order (caught by a test). The "don't delete things in use" rules live in the domain layer (sources and projects are archived; concepts are not deletable in v0). Account deletion removes every row the student owns; this is tested.
+- `users.name` is stored in the column `display_name` (Better Auth's `name` field). Better Auth owns `users`, `auth_sessions`, `auth_accounts`, `auth_verifications`; ids are UUIDs.
+- Extra columns: `projects.repo_url`; `practice_opportunities.estimated_minutes`; `ai_runs.error_message`; `extraction_items.normalized_name`; `sessions.completed_at`; `learning_debt_items.pinned`/`resolved_at`. `user_id` is denormalized onto `project_context_snapshots`, `session_messages`, `extractions`, `extraction_items` so every read can be scoped without a join.
+- CHECK constraints: `sessions.hint_level between 0 and 3`; hint levels only on APPLY sessions; `SWITCHED` only on APPLY sessions; confidence ranges; `concept_progress.self_confidence between 1 and 5`.
+- Partial unique indexes: shared skill slug; per-user custom skill slug; **one open (OPEN/PLANNED) learning-debt item per concept per student**; `UNIQUE (user_id, normalized_name)` on concepts; `UNIQUE (project_id, version)` on context snapshots; `UNIQUE (build_session_id)` on extractions (what makes extraction idempotent).
+- A new concept may start only at `EXPOSED` or `LEARNED`; every later stage change is recorded in `progress_events` with its provenance (`source`, `session_id`).
+- `concept_captured.via` is `MANUAL`, `CAPTURE` or `EXTRACTION`. `ai_runs` stores a SHA-256 of the prompt, never the prompt.
+- `GET /sessions/:id` exposes tutor metadata (`hintLevel`, `nextQuestion`, `suggestedProgress`, `fallback`); model `observations` are stored but never shown.

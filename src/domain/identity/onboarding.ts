@@ -44,7 +44,9 @@ export async function completeOnboarding(
     const [claimed] = await tx.db
       .update(userProfiles)
       .set({ onboardingCompleted: true })
-      .where(and(ownedBy(userProfiles.userId, tx.auth), eq(userProfiles.onboardingCompleted, false)))
+      .where(
+        and(ownedBy(userProfiles.userId, tx.auth), eq(userProfiles.onboardingCompleted, false)),
+      )
       .returning({ userId: userProfiles.userId });
     if (!claimed) return { alreadyCompleted: true };
 
