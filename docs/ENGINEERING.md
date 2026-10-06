@@ -79,6 +79,7 @@ export const POST = apiRoute(async ({ c, req }) => createThing(c, await parseBod
 - Local dev and ALL tests use PGlite (embedded Postgres, no install). Deployed environments use Neon through `DATABASE_URL`. Same SQL migrations on both.
 - Foreign keys between user-owned tables use `ON DELETE CASCADE` / `SET NULL`, never `NO ACTION`: PostgreSQL checks `NO ACTION` per cascade step, which breaks account deletion. "Don't delete things that are in use" is enforced in the domain layer (archive instead).
 - **Schema changes:** edit the schema files, run `pnpm db:generate --name <short-name>`, commit the generated SQL, never hand-edit generated migrations, add a test in `tests/integration/schema.test.ts`, and update `docs/DATA_MODEL.md` ("Implementation notes"). Parallel work: only one person changes the schema at a time.
+- **A new table must be classified for account export and deletion.** Give it a foreign key to `users` with `ON DELETE CASCADE` (or to a user-owned parent) so `DELETE /me` removes it, then add it to `DATA_EXPORT_COVERAGE` in `src/domain/identity/data-export.ts` (exported, or excluded with a reason; list any withheld columns in `EXPORT_OMITTED_COLUMNS`). `tests/integration/identity/*` walk the whole schema and fail until you do. A table with no foreign-key path to `users` also needs an entry in `src/test/schema-tables.ts`.
 
 ## AI
 
@@ -122,7 +123,7 @@ app.clock.advance(60_000);                                 // controllable time
 - Components: shadcn/ui in `src/components/ui/*` (Radix), shell in `src/components/shell/*`, shared pieces `PageHeader`, `EmptyState`, `ModeBadge` (Apply = teal tutor mode, Build = amber AI-allowed: ALWAYS use it, never ad-hoc colors), `StageBadge`. Design tokens in `src/app/globals.css` (`bg-apply-soft`, `text-build-ink`, …); headings use `font-display`.
 - **All product wording lives in `src/lib/copy.ts` or a `src/lib/copy-<area>.ts` file you create** (don't edit another area's copy file). The UI says "Needs Review"; code/DB/API say `learning_debt`. Never tell a student what they do or don't understand; no streaks, scores or percentages; calm, specific, honest.
 - Every list has an empty state (what it is for + the one next step), every async action a pending state, every failure a message that says what to do next. Mobile first: 16 px gutters, no horizontal scroll, tab bar on phones. Accessibility: labels on every input, visible focus, keyboard operable, `aria-live` for async status, 4.5:1 contrast, respect reduced motion.
-- Routes (so slices agree on links): `/today` `/learn` `/projects` `/projects/new` `/projects/[id]` · `/apply/new?projectId=&conceptId=` · `/build/new?projectId=` · `/sessions/[id]` (mode-aware) · `/sessions/[id]/extract` · `/evidence` `/evidence/new?sessionId=&projectId=&conceptId=` `/evidence/[id]` · `/onboarding` (outside the shell).
+- Routes (so slices agree on links): `/today` `/learn` `/projects` `/projects/new` `/projects/[id]` · `/apply/new?projectId=&conceptId=` · `/build/new?projectId=` · `/sessions/[id]` (mode-aware) · `/sessions/[id]/extract` · `/evidence` `/evidence/new?sessionId=&projectId=&conceptId=` `/evidence/[id]` · `/settings` (account menu, not a primary nav item: profile, AI-data disclosure, data export, account deletion) · `/onboarding` (outside the shell).
 
 ## Conventions
 

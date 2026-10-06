@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BadgeCheck, BookOpen, Hammer, ScanSearch, Target } from "lucide-react";
 import { getAuthContext } from "@/lib/auth/session";
 import { copy } from "@/lib/copy";
+import { settingsCopy } from "@/lib/copy-settings";
 import { getEnv } from "@/lib/env";
 import { SignInPanel } from "./sign-in-panel";
 
@@ -18,9 +19,15 @@ const LOOP = [
   { icon: BadgeCheck, label: "Evidence", text: "Keep proof of work you can explain." },
 ] as const;
 
-export default async function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   if (await getAuthContext()) redirect("/today");
   const env = getEnv();
+  // Account deletion sends the student here with `?deleted=1` so they can see it worked.
+  const deleted = (await searchParams).deleted === "1";
 
   return (
     <main className="mx-auto grid min-h-svh w-full max-w-5xl items-center gap-12 px-6 py-12 md:grid-cols-[1.1fr_1fr]">
@@ -57,6 +64,14 @@ export default async function SignInPage() {
       </section>
 
       <section className="bg-card rounded-2xl border p-6 shadow-sm sm:p-8">
+        {deleted && (
+          <p
+            role="status"
+            className="bg-success-soft text-foreground mb-5 rounded-lg border px-3 py-2 text-sm"
+          >
+            {settingsCopy.delete.doneNotice}
+          </p>
+        )}
         <h2 className="font-display mb-1 text-2xl font-semibold">Welcome</h2>
         <p className="text-muted-foreground mb-6 text-sm">Sign in to pick up your loop.</p>
         <SignInPanel

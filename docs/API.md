@@ -43,12 +43,14 @@ Use UUIDs, UTC ISO-8601 timestamps, server-side schema validation, cursor pagina
 
 ## API surface
 
-**v0** marks the experimental v0 scope; **P1** is the GitHub integration (deferred; v0 takes pasted repository URLs and artifact links).
+**v0** marks the experimental v0 scope; **P1** is the GitHub integration (deferred; v0 takes pasted repository URLs and artifact links); **v1** marks the account and privacy controls added after v0 (owner-approved 2026-10-06 under SPEC §6: "expose deletion controls").
 
 | Method | Endpoint | v0 | Main request | Main response |
 |---|---|---|---|---|
 | GET | `/me` | ✔ | — | User + profile |
 | PATCH | `/me/profile` | ✔ | profile fields | Updated profile |
+| GET | `/me/export` | v1 | — | The whole account as a JSON file download |
+| DELETE | `/me` | v1 | `{ confirmEmail }` | 204; the account and everything it owned are deleted |
 | GET | `/learning-sources` | ✔ | filters | Sources |
 | POST | `/learning-sources` | ✔ | type/title/code/term | Source |
 | PATCH | `/learning-sources/:id` | ✔ | mutable fields | Source |
@@ -218,7 +220,7 @@ IDs refer to [SPEC_REVIEW.md](SPEC_REVIEW.md).
 | R-08, R-13 | `POST /sessions/:id/abandon` — explicit "discard"; keeps the record |
 | R-12, R-13 | `DELETE /sessions/:id` — hard delete, cascades `session_messages` |
 | R-13 | `POST /concepts/bulk` — create the confirmed capture candidates ("Confirm all") in one transaction |
-| R-12, R-13 | `DELETE /me` — account and data deletion (admin-run during the pilot, self-serve later) |
+| R-12, R-13 | `DELETE /me` — account and data deletion. Was "admin-run during the pilot, self-serve later"; built **self-serve** for v1 (owner-approved 2026-10-06 under SPEC §6, see "Account and privacy" below) |
 | R-10 | `PATCH /extractions/:id/items/:itemId` with `disposition = NEEDS_REVIEW` find-or-creates the concept and creates the `learning_debt_items` row in one transaction; the response includes the debt item |
 | R-20 | `POST /events` accepts only client-originated UI events (`today_card_clicked`, `context_pack_copied`, …). Domain events are emitted server-side |
 
@@ -303,3 +305,50 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 | `POST /events` | 202 `{ data: { accepted: true } }`; body `{ name, entityType?, entityId?, metadata? (under 2 KB) }`; `name` must be a client event. |
 
 KPI SQL lives in `scripts/kpi/` (see its README); the page `/evidence/[id]/edit` reuses the evidence form.
+## Account and privacy (v1 build, 2026-10-06)
+
+Owner-approved on 2026-10-06 under SPEC §6 ("expose deletion controls", "account deletion removes or anonymizes user-owned data"); see the SPEC_REVIEW resolution log. Both endpoints act only on the signed-in caller: no user id or email in the request selects whose data is read or removed. The UI is `/settings` (account menu → Settings).
+
+### `GET /me/export`
+
+Downloads everything the caller owns as one JSON file. `200` with `Content-Type: application/json; charset=utf-8`, `Content-Disposition: attachment; filename="appliedloop-export-YYYY-MM-DD.json"` and `Cache-Control: no-store`. The body is the export document itself, **not** wrapped in `{ data }`, because it is meant to be saved and opened on its own. `401` when signed out.
+
+```json
+{
+  "exportVersion": 1,
+  "exportedAt": "2026-10-06T15:00:00.000Z",
+  "account": { "id": "uuid", "name": "…", "email": "…", "emailVerified": false, "image": null, "role": "STUDENT", "createdAt": "…", "updatedAt": "…" },
+  "profile": { "program": null, "cohort": null, "timezone": "UTC", "onboardingCompleted": true, "preferencesJson": {} },
+  "learningSources": [], "skills": [], "concepts": [], "conceptProgress": [], "progressEvents": [],
+  "projects": [], "projectContextSnapshots": [], "practiceOpportunities": [],
+  "sessions": [], "sessionMessages": [], "extractions": [], "extractionItems": [],
+  "learningDebtItems": [], "evidenceItems": [], "aiRuns": [], "eventLog": []
+}
+```
+
+- Each array is one table's rows with camelCase column names. `userId` and `ownerUserId` are left out (every row is the caller's own).
+- Link tables are embedded in their parent, each link as `{ id, name }`: `concepts[].skills`, `projects[].skills` (plus `relationshipType`), `evidenceItems[].concepts` and `evidenceItems[].skills`.
+- `skills` holds only the skills the caller created. Shared catalog skills appear by name inside links. A link to anyone else's skill or concept is never shown.
+- Read in one repeatable-read, read-only transaction, so the file is a consistent snapshot.
+- **Never included:** Better Auth's tables (session tokens, provider tokens and the password hash, one-time tokens), the prompt fingerprint `ai_runs.input_hash`, and any other student's data.
+- Which table maps to which section, and which columns are omitted, is declared in `src/domain/identity/data-export.ts` and checked against the live schema by a test, so a new table or column cannot be forgotten.
+
+### `DELETE /me`
+
+```json
+DELETE /api/v1/me
+
+{ "confirmEmail": "student@example.com" }
+```
+
+| Status | When |
+|---|---|
+| `204` | The account and everything it owned are deleted and the session cookie is cleared. Also `204` when the account is already gone by the time the request is processed (two simultaneous requests: one deletes, the other finds nothing and succeeds, so a double click never errors). A retry after the cookie was cleared is `401`, like any signed-out request. |
+| `400 VALIDATION_ERROR` | `confirmEmail` is missing, blank, or not equal (trimmed, case-insensitive) to the signed-in account's email; `details.issues[0].path` is `confirmEmail`. Nothing is deleted. A body that is not JSON is also `400`. |
+| `401 UNAUTHENTICATED` | Signed out. |
+| `403 FORBIDDEN` | Cross-site `Origin` (the standard guard on every mutation). |
+
+- One transaction deletes the `users` row. Every foreign key from a user-owned table is `ON DELETE CASCADE`, so profile, Better Auth sessions and accounts, learning data, sessions and messages, AI run records, evidence and telemetry go with it. Better Auth's `auth_verifications` has no user foreign key, so the one-time tokens that belong to the account are deleted explicitly in the same transaction.
+- The browser's session cookie is expired on the same response. If that step fails the account is already gone, and a leftover cookie is treated as signed out.
+- No telemetry event is written. The only trace is one anonymous log line (`Account deleted`) with no user id, email or counts.
+- Not reversible. Backups kept by the database host age out on their own schedule (ADR-0004).

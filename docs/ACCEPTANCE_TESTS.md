@@ -36,6 +36,14 @@
 
 Notes on how to read two of these in v0 (proposed): **AT-12** is satisfied by asserting that the exported context pack contains no Apply-mode restrictions, if R-07 is resolved as "no in-app Build assistant". **AT-22** also covers pasted code in tutor messages, not only repository content (R-12).
 
+**AT-22 status (2026-10-06): met.** `tests/integration/privacy/persistence-audit.test.ts` runs capture, an Apply session with code pasted into a tutor message and into the notes, and a Build session with a summary, an artifact reference, the context pack and an extraction, against the demo AI. It records every model request and scans every text, varchar and jsonb column of every table:
+
+- raw prompts, system prompts and typed inputs are stored **nowhere**: `ai_runs` holds only the SHA-256, checked against what was actually sent;
+- each piece of student-written text is found in **exactly** the columns the design allows, listed at the top of that file (pasted code in `session_messages.content` and `sessions.notes`, the build summary in `sessions.summary` and `extractions.summary`, capture text nowhere);
+- nothing is written to the logs, and the AI disclosure on `/settings` is true (no name, email or repository link is sent; nothing is sent from a project with AI turned off).
+
+Related controls: account deletion removes every row of the student in every table and leaves everyone else untouched (`tests/integration/identity/account-deletion.test.ts`); the data export is scoped to the caller and free of secrets (`data-export.test.ts`, `account.routes.test.ts`); browser coverage is `tests/e2e/settings.spec.ts`.
+
 ## AI eval suite
 
 This must exist before prompts are treated as production-ready. The source spec's fixture categories:
