@@ -14,7 +14,7 @@ import { CONCEPT_STAGES, type ConceptStage } from "@/lib/db/schema/enums";
 import { ConflictError, NotFoundError, parseOrThrow } from "@/lib/errors";
 import { normalizeConceptName } from "@/lib/normalize";
 import { ownedBy, requireRow } from "@/lib/ownership";
-import { decodeCursor, pageOf, pageQuerySchema } from "@/lib/pagination";
+import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
 import { emit } from "@/lib/telemetry/emit";
 import { getStageHistory, type ProgressEventDto } from "./progress";
 import {
@@ -365,8 +365,6 @@ export async function createConceptsBulk(
 // Listing, reading, updating
 // ---------------------------------------------------------------------------------------------
 
-const cursorSchema = z.object({ t: z.string(), id: z.string() });
-
 /** `GET /concepts`: the caller's concepts, newest first. */
 export async function listConcepts(c: AppContext, raw: ListConceptsQuery = {}) {
   const query = parseOrThrow(listConceptsQuery, raw);
@@ -403,7 +401,7 @@ export async function listConcepts(c: AppContext, raw: ListConceptsQuery = {}) {
     );
   }
   if (query.cursor) {
-    const after = decodeCursor(query.cursor, cursorSchema);
+    const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);
     conditions.push(
       or(lt(concepts.capturedAt, at), and(eq(concepts.capturedAt, at), lt(concepts.id, after.id)))!,

@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { OffAiProvider } from "@/lib/ai/demo";
-import { runAi } from "@/lib/ai/run";
-import type { PromptSpec } from "@/lib/ai/types";
+import { IN_FLIGHT_MESSAGE, runAi } from "@/lib/ai/run";
+import type { AiProvider, PromptSpec } from "@/lib/ai/types";
 import { aiRuns, eventLog } from "@/lib/db/schema";
 import { AiInvalidOutputError, AiUnavailableError, RateLimitedError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
@@ -155,6 +155,65 @@ describe("runAi", () => {
     // An hour later Alice can go again.
     app.clock.advance(61 * 60 * 1000);
     await expect(runAi(alice.ctx, spec, { topic: "d" })).resolves.toBeDefined();
+  });
+
+  // SECURITY_REVIEW H-1: the limit used to count only FINISHED runs, so parallel requests all
+  // passed the check before any of them was recorded and every one reached the (paid) provider.
+  it("counts calls still in flight, so parallel requests cannot exceed the hourly limit", async () => {
+    const alice = await app.makeUser();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let providerCalls = 0;
+    const slow: AiProvider = {
+      mode: "demo",
+      name: "slow",
+      rateLimitPerHour: 2,
+      modelFor: () => "slow-model",
+      async generate() {
+        providerCalls += 1;
+        await gate; // every call stays in flight until the test lets them all finish
+        return { object: { answer: "ok" }, usage: {} };
+      },
+    };
+    const ctx = { ...alice.ctx, ai: slow };
+
+    let rejectedEarly = 0;
+    const outcomes = Array.from({ length: 6 }, (_, i) =>
+      runAi(ctx, spec, { topic: `t${i}` }).then(
+        () => "ok" as const,
+        (error: unknown) => {
+          rejectedEarly += 1;
+          return error;
+        },
+      ),
+    );
+    // Each request either reaches the provider or is turned away before it.
+    await vi.waitFor(() => expect(providerCalls + rejectedEarly).toBe(6));
+    const inFlight = await app.db.select().from(aiRuns).where(eq(aiRuns.userId, alice.id));
+    expect(inFlight.map((run) => run.errorMessage)).toEqual([IN_FLIGHT_MESSAGE, IN_FLIGHT_MESSAGE]);
+    release();
+    const results = await Promise.all(outcomes);
+
+    expect(providerCalls).toBe(2);
+    expect(results.filter((result) => result === "ok")).toHaveLength(2);
+    expect(results.filter((result) => result instanceof RateLimitedError)).toHaveLength(4);
+    const runs = await app.db.select().from(aiRuns).where(eq(aiRuns.userId, alice.id));
+    expect(runs.map((run) => run.status)).toEqual(["SUCCEEDED", "SUCCEEDED"]);
+  });
+
+  // SECURITY_REVIEW L-5: error details reach the browser, so they carry no internal ids.
+  it("never hands the run id or the model's validation issues to the client", async () => {
+    const alice = await app.makeUser();
+    app.ai.failNext("CAPTURE", new Error("502 from upstream: key sk-live-123"));
+    const unavailable = await runAi(alice.ctx, spec, { topic: "a" }).catch((error) => error);
+    expect(unavailable).toBeInstanceOf(AiUnavailableError);
+    expect(unavailable.details).toBeUndefined();
+
+    app.ai.enqueue("CAPTURE", { wrong: 1 }, { wrong: 2 });
+    const invalid = await runAi(alice.ctx, spec, { topic: "b" }).catch((error) => error);
+    expect(invalid).toBeInstanceOf(AiInvalidOutputError);
+    expect(invalid.details).toBeUndefined();
+    expect(JSON.stringify([unavailable, invalid])).not.toContain("sk-live-123");
   });
 
   it("reports 'unavailable' without touching the provider or the database when AI is off", async () => {

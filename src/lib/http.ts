@@ -36,6 +36,12 @@ type RouteSegmentData = { params: Promise<Record<string, string | string[] | und
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
+ * Largest request body any endpoint reads (1 MiB). The biggest legitimate body, a full
+ * `POST /concepts/bulk`, stays well under it.
+ */
+export const MAX_JSON_BODY_BYTES = 1_048_576;
+
+/**
  * Build the `apiRoute` factory around a context resolver. Production code uses the one in
  * `lib/api.ts`; tests pass a fake resolver.
  */
@@ -45,8 +51,7 @@ export function createApiRoute(resolveContext: () => Promise<AppContext>) {
     options: { status?: number } = {},
   ) {
     return async (req: Request, segment?: RouteSegmentData): Promise<Response> => {
-      const requestId =
-        req.headers.get("x-request-id") ?? `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      const requestId = requestIdFor(req);
       try {
         assertSameOrigin(req);
         const c = await resolveContext();
@@ -71,12 +76,31 @@ export function createApiRoute(resolveContext: () => Promise<AppContext>) {
   };
 }
 
+/** A client-supplied request id is kept only when it is a short, plain token (it is logged). */
+const CLIENT_REQUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/;
+
+function requestIdFor(req: Request): string {
+  const supplied = req.headers.get("x-request-id");
+  if (supplied && CLIENT_REQUEST_ID.test(supplied)) return supplied;
+  return `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+/** Fetch-metadata values that mean "a page from another origin sent this". */
+const FOREIGN_FETCH_SITES = new Set(["cross-site", "same-site"]);
+
 /**
- * Cookie-authenticated mutations must come from our own pages: reject a cross-site `Origin`, and
- * require JSON for requests with a body (which a plain cross-site HTML form cannot send).
+ * The cross-site guard. Cookie-authenticated mutations must come from our own pages: reject a
+ * cross-site `Origin` or `Sec-Fetch-Site` (browsers send at least one of them), and require JSON
+ * for requests with a body (which a plain cross-site HTML form cannot send). Exported so an
+ * endpoint that is NOT cookie-authenticated (a signed webhook) can state its exemption explicitly
+ * instead of copying or weakening this check.
  */
-function assertSameOrigin(req: Request): void {
+export function assertSameOrigin(req: Request): void {
   if (SAFE_METHODS.has(req.method)) return;
+  const fetchSite = req.headers.get("sec-fetch-site")?.toLowerCase();
+  if (fetchSite && FOREIGN_FETCH_SITES.has(fetchSite)) {
+    throw new ForbiddenError("Cross-site requests are not allowed.");
+  }
   const origin = req.headers.get("origin");
   const host = req.headers.get("host");
   if (origin) {
@@ -113,6 +137,8 @@ function json(body: unknown, status: number, requestId: string): Response {
 
 function withRequestId(response: Response, requestId: string): Response {
   response.headers.set("x-request-id", requestId);
+  // Answers carry a student's private data (pasted code, notes): never stored by a browser or proxy.
+  if (!response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
   return response;
 }
 
@@ -150,10 +176,37 @@ function errorResponse(error: unknown, requestId: string): Response {
   );
 }
 
-/** Read and parse a JSON request body. */
+/**
+ * The raw request body as text, refusing anything over `maxBytes`. The limit is enforced while the
+ * stream is read, so neither a missing nor a false `Content-Length` lets a huge body into memory.
+ * (A signed webhook needs exactly these bytes to verify its signature.)
+ */
+export async function readBodyText(req: Request, maxBytes = MAX_JSON_BODY_BYTES): Promise<string> {
+  const tooLarge = () => new ValidationError("The request body is too large.");
+  if (Number(req.headers.get("content-length")) > maxBytes) throw tooLarge();
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  // Decoded like `Request.json()` does (UTF-8, a leading BOM dropped).
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
+/** Read and parse a JSON request body (at most `MAX_JSON_BODY_BYTES`). */
 export async function readJson(req: Request): Promise<unknown> {
+  const text = await readBodyText(req);
   try {
-    return await req.json();
+    return JSON.parse(text);
   } catch {
     throw new ValidationError("The request body must be valid JSON.");
   }

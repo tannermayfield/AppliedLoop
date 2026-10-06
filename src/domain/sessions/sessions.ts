@@ -21,7 +21,7 @@ import {
 } from "@/lib/db/schema/enums";
 import { ConflictError, ValidationError, parseOrThrow } from "@/lib/errors";
 import { ownedBy, requireRow } from "@/lib/ownership";
-import { decodeCursor, pageOf, pageQuerySchema } from "@/lib/pagination";
+import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
 import { emit } from "@/lib/telemetry/emit";
 import {
   assertId,
@@ -231,8 +231,6 @@ export const listSessionsQuery = pageQuerySchema.extend({
 });
 export type ListSessionsQuery = z.input<typeof listSessionsQuery>;
 
-const cursorSchema = z.object({ t: z.string(), id: z.string() });
-
 /** The caller's sessions, newest first (Today's resume card, the project Sessions tab). */
 export async function listSessions(
   c: AppContext,
@@ -245,7 +243,7 @@ export async function listSessions(
   if (query.type) conditions.push(eq(sessions.type, query.type));
   if (query.status) conditions.push(eq(sessions.status, query.status));
   if (query.cursor) {
-    const after = decodeCursor(query.cursor, cursorSchema);
+    const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);
     conditions.push(
       or(lt(sessions.startedAt, at), and(eq(sessions.startedAt, at), lt(sessions.id, after.id)))!,

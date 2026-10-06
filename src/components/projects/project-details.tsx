@@ -12,6 +12,7 @@ import { ApiError, apiRequest } from "@/components/learning/api-client";
 import { requestCopy } from "@/lib/copy-learning";
 import { projectsCopy } from "@/lib/copy-projects";
 import type { ProjectStatus } from "@/lib/db/schema/enums";
+import { webHref } from "@/lib/safe-url";
 import { ProjectStatusControl } from "./project-status-control";
 import { formatTechStack, parseTechStack } from "./tech-stack";
 
@@ -51,6 +52,8 @@ export function ProjectDetails({ project }: Props) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Only an http(s) address becomes a link, whatever was saved.
+  const repoHref = webHref(project.repoUrl);
 
   function startEditing() {
     setName(project.name);
@@ -233,9 +236,9 @@ export function ProjectDetails({ project }: Props) {
             )}
           </Fact>
           <Fact label={overview.repoHeading}>
-            {project.repoUrl ? (
+            {repoHref ? (
               <a
-                href={project.repoUrl}
+                href={repoHref}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-1 break-all underline underline-offset-4"
@@ -244,6 +247,8 @@ export function ProjectDetails({ project }: Props) {
                 <ExternalLink className="size-3.5 shrink-0" aria-hidden />
                 <span className="sr-only">(opens in a new tab)</span>
               </a>
+            ) : project.repoUrl ? (
+              <span className="break-all">{project.repoUrl}</span>
             ) : (
               <span className="text-muted-foreground">{overview.repoEmpty}</span>
             )}

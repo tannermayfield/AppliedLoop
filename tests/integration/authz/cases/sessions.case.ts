@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { requestHint } from "@/domain/sessions/apply/hints";
 import { switchToBuild } from "@/domain/sessions/apply/switch";
 import { tutorReply } from "@/domain/sessions/apply/tutor";
+import { sendSessionMessage } from "@/domain/sessions/dispatch";
 import { ScriptedAiProvider } from "@/test/ai";
 import {
   abandonSession,
@@ -84,6 +85,33 @@ const cases = [
     arrange: async (app, owner) => (await insertApplySetup(app.db, owner.id)).session.id,
     attempt: (_app, caller, id) =>
       tutorReply(
+        {
+          ...caller.ctx,
+          ai: new ScriptedAiProvider().enqueue("TUTOR", {
+            coachMessage: "What would you try first?",
+            hintLevel: 0,
+            nextQuestion: "Why?",
+            observations: [],
+            suggestedProgress: null,
+          }),
+        },
+        id,
+        { message: "hi" },
+      ),
+    verifyUntouched: async (app, _owner, id) => {
+      const messages = await app.db
+        .select()
+        .from(sessionMessages)
+        .where(eq(sessionMessages.sessionId, id));
+      if (messages.length > 0) throw new Error("A message was added to someone else's session");
+    },
+  }),
+  authzCase({
+    // The route's entry point: it loads the session before choosing Apply or Build behavior.
+    name: "sessions/dispatch.sendSessionMessage",
+    arrange: async (app, owner) => (await insertApplySetup(app.db, owner.id)).session.id,
+    attempt: (_app, caller, id) =>
+      sendSessionMessage(
         {
           ...caller.ctx,
           ai: new ScriptedAiProvider().enqueue("TUTOR", {

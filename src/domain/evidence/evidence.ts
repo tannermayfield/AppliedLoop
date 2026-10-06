@@ -22,7 +22,7 @@ import {
 } from "@/lib/db/schema/enums";
 import { NotFoundError, ValidationError, parseOrThrow } from "@/lib/errors";
 import { ownedBy, requireRow } from "@/lib/ownership";
-import { decodeCursor, pageOf, pageQuerySchema } from "@/lib/pagination";
+import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
 import { emit } from "@/lib/telemetry/emit";
 import {
   assertSkillsAccessible,
@@ -363,8 +363,6 @@ function suggestAdvances(evidence: EvidenceDto): SuggestedAdvance[] {
     }));
 }
 
-const cursorSchema = z.object({ t: z.string(), id: z.string() });
-
 export async function listEvidence(c: AppContext, raw: ListEvidenceQuery = {}) {
   const query = parseOrThrow(listEvidenceQuery, raw);
   const conditions: SQL[] = [ownedBy(evidenceItems.userId, c.auth)];
@@ -411,7 +409,7 @@ export async function listEvidence(c: AppContext, raw: ListEvidenceQuery = {}) {
     );
   }
   if (query.cursor) {
-    const after = decodeCursor(query.cursor, cursorSchema);
+    const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);
     conditions.push(
       or(

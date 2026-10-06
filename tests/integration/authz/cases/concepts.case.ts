@@ -90,6 +90,17 @@ const cases = [
     verifyUntouched: (app) => noConceptsCreated(app),
   }),
   authzCase({
+    name: "learning/concepts.createConceptsBulk (another student's custom skill)",
+    arrange: async (app, owner) =>
+      (await insertSkill(app.db, { name: "Private skill", ownerUserId: owner.id })).id,
+    attempt: (_app, caller, skillId) =>
+      createConceptsBulk(caller.ctx, {
+        via: "CAPTURE",
+        items: [{ name: "Fine" }, { name: "Mine", skillIds: [skillId] }],
+      }),
+    verifyUntouched: (app) => noConceptsCreated(app),
+  }),
+  authzCase({
     name: "learning/concepts.updateConcept (another student's source)",
     arrange: async (app, owner) => (await insertSource(app.db, owner.id)).id,
     attempt: async (app, caller, sourceId) => {

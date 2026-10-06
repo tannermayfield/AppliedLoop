@@ -65,6 +65,26 @@ describe("loadEnv", () => {
     ).toThrow(/AUTH_DEV_LOGIN/);
   });
 
+  // SECURITY_REVIEW L-7: canned demo answers must never reach students in a deployed app.
+  it("refuses to boot in production with demo AI", () => {
+    expect(() =>
+      loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: SECRET, AI_MODE: "demo" }),
+    ).toThrow(/AI_MODE=demo/);
+    expect(
+      loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: SECRET, AI_MODE: "off" }).aiMode,
+    ).toBe("off");
+  });
+
+  // SECURITY_REVIEW M-4: the secret signs the session cookie cache; a guessable one forges sessions.
+  it("refuses a short auth secret in production", () => {
+    expect(() => loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: "changeme" })).toThrow(
+      /at least 32/,
+    );
+    expect(loadEnv({ NODE_ENV: "development", BETTER_AUTH_SECRET: "short-dev" }).authSecret).toBe(
+      "short-dev",
+    );
+  });
+
   it("requires a secret outside tests", () => {
     expect(() => loadEnv({ NODE_ENV: "development" })).toThrow(/BETTER_AUTH_SECRET/);
     expect(() => loadEnv({ NODE_ENV: "test" })).not.toThrow();
