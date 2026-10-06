@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3100;
+// `E2E_PORT` / `E2E_DATA_DIR` let several checkouts run E2E side by side.
+const PORT = Number(process.env.E2E_PORT ?? 3100);
+// `PW_CHROMIUM_PATH` points at a Chromium binary (cloud sandboxes); otherwise the installed Chrome is used.
+const browser = process.env.PW_CHROMIUM_PATH
+  ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH } }
+  : { channel: "chrome" };
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -18,12 +23,11 @@ export default defineConfig({
   projects: [
     {
       name: "chrome",
-      // Uses the Chrome that is already installed, so no browser download is needed.
-      use: { ...devices["Desktop Chrome"], channel: "chrome" },
+      use: { ...devices["Desktop Chrome"], ...browser },
     },
   ],
   webServer: {
-    // `dev:e2e` wipes the throwaway database, then starts Next on :3100.
+    // `dev:e2e` wipes the throwaway database, then starts Next on the E2E port.
     command: "pnpm dev:e2e",
     url: `http://localhost:${PORT}/sign-in`,
     reuseExistingServer: !process.env.CI,
@@ -31,8 +35,10 @@ export default defineConfig({
     env: {
       AI_MODE: "demo",
       AUTH_DEV_LOGIN: "1",
-      PGLITE_DATA_DIR: ".data/e2e",
+      E2E_PORT: String(PORT),
+      PGLITE_DATA_DIR: process.env.E2E_DATA_DIR ?? ".data/e2e",
       BETTER_AUTH_URL: `http://localhost:${PORT}`,
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "e2e-secret-e2e-secret-e2e-secret-e2e",
     },
   },
 });

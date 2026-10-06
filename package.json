@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:e2e": "node -e \"require('node:fs').rmSync('.data/e2e',{recursive:true,force:true})\" && next dev -p 3100",
+    "dev:e2e": "node scripts/dev-e2e.mjs",
     "build": "cross-env AUTH_DEV_LOGIN=0 next build",
     "start": "next start",
     "lint": "eslint",
