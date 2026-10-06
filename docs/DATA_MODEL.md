@@ -215,6 +215,7 @@ Where the code differs from, or adds to, the tables above. **These supersede the
 - Partial unique indexes: shared skill slug; per-user custom skill slug; **one open (OPEN/PLANNED) learning-debt item per concept per student**; `UNIQUE (user_id, normalized_name)` on concepts; `UNIQUE (project_id, version)` on context snapshots; `UNIQUE (build_session_id)` on extractions (what makes extraction idempotent).
 - A new concept may start only at `EXPOSED` or `LEARNED`; every later stage change is recorded in `progress_events` with its provenance (`source`, `session_id`).
 - `concept_captured.via` is `MANUAL`, `CAPTURE` or `EXTRACTION`. `ai_runs` stores a SHA-256 of the prompt, never the prompt.
+- An `ai_runs` row is written **before** the provider call (`status = FAILED`, `error_message = "No outcome recorded: in flight, or the server stopped mid-call."`) and updated with the outcome afterwards, so the per-user hourly limit counts calls still in flight (SECURITY_REVIEW H-1). A row that keeps that message means the server stopped during the call. No schema change.
 - `GET /sessions/:id` exposes tutor metadata (`hintLevel`, `nextQuestion`, `suggestedProgress`, `fallback`); model `observations` are stored but never shown.
 
 ### Retention, export and deletion (v1, 2026-10-06)

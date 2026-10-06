@@ -54,7 +54,7 @@ AI works out of the box in **demo mode**: deterministic canned responses, clearl
 
 ## Deploying (Vercel + Neon)
 
-1. Create a Neon database and a Vercel project. Set these environment variables: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (your public origin), `GITHUB_CLIENT_ID/SECRET` and/or `GOOGLE_CLIENT_ID/SECRET`, `AI_MODE=live`, `AI_GATEWAY_API_KEY` (or the Vercel OIDC integration) and `AI_MODEL_CAPTURE/OPPORTUNITY/TUTOR/EXTRACTION`. Optionally `AUTH_ALLOWED_EMAILS` to invite-gate the pilot. **Never** set `AUTH_DEV_LOGIN` in production (the app refuses to start).
+1. Create a Neon database and a Vercel project. Set these environment variables: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (your public origin), `GITHUB_CLIENT_ID/SECRET` and/or `GOOGLE_CLIENT_ID/SECRET`, `AI_MODE=live`, `AI_GATEWAY_API_KEY` (or the Vercel OIDC integration) and `AI_MODEL_CAPTURE/OPPORTUNITY/TUTOR/EXTRACTION`. Optionally `AUTH_ALLOWED_EMAILS` to invite-gate the pilot. **Never** set `AUTH_DEV_LOGIN` or `AI_MODE=demo` in production, and use a generated `BETTER_AUTH_SECRET` of at least 32 characters (the app refuses to start otherwise). Security notes: [`docs/SECURITY_REVIEW.md`](docs/SECURITY_REVIEW.md).
 2. OAuth callback URLs: `<origin>/api/auth/callback/github` and `<origin>/api/auth/callback/google`.
 3. Build command: `pnpm db:migrate && pnpm build` (migrations are plain SQL files in `drizzle/`).
 

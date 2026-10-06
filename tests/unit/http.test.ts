@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppContext } from "@/lib/context";
 import { NotFoundError, UnauthenticatedError } from "@/lib/errors";
-import { createApiRoute, Paged, parseBody, parseQuery } from "@/lib/http";
+import { createApiRoute, MAX_JSON_BODY_BYTES, Paged, parseBody, parseQuery } from "@/lib/http";
 import { callRoute } from "@/test/route";
 
 const fakeContext = {
@@ -21,6 +21,20 @@ describe("apiRoute envelope", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: { hello: "world" } });
     expect(res.headers.get("x-request-id")).toMatch(/^req_[0-9a-f]{16}$/);
+  });
+
+  // SECURITY_REVIEW L-10: API answers hold private data; no browser or proxy may store them.
+  it("marks every answer, success or error, as not storable", async () => {
+    const ok = await callRoute(apiRoute(async () => ({ secret: "pasted code" })));
+    const failed = await callRoute(
+      apiRoute(async () => {
+        throw new NotFoundError("Project");
+      }),
+    );
+    const passthrough = await callRoute(apiRoute(async () => Response.json({ data: 1 })));
+    for (const res of [ok, failed, passthrough]) {
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
   });
 
   it("keeps a client-supplied request id", async () => {
@@ -161,5 +175,64 @@ describe("apiRoute cross-site guard", () => {
       headers: { "content-type": "text/plain", "content-length": "5" },
     });
     expect(res.status).toBe(400);
+  });
+
+  // SECURITY_REVIEW L-3: without an Origin header the guard used to fail open.
+  it.each(["cross-site", "same-site"])(
+    "rejects a mutation the browser marks Sec-Fetch-Site: %s, even without an Origin",
+    async (site) => {
+      const res = await callRoute(POST, { body: {}, headers: { "sec-fetch-site": site } });
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("FORBIDDEN");
+    },
+  );
+
+  it("accepts a same-origin mutation that carries fetch metadata", async () => {
+    const res = await callRoute(POST, {
+      body: {},
+      headers: { "sec-fetch-site": "same-origin", origin: "http://localhost", host: "localhost" },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("request body limits", () => {
+  const POST = apiRoute(async ({ req }) => parseBody(req, z.object({ text: z.string() })));
+
+  // SECURITY_REVIEW L-2: bodies were read whole before any size check.
+  it("rejects a JSON body over the cap before parsing it", async () => {
+    const res = await callRoute(POST, { body: { text: "x".repeat(MAX_JSON_BODY_BYTES) } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(res.body.error.message).toMatch(/too large/i);
+  });
+
+  it("trusts neither a missing nor a small declared Content-Length", async () => {
+    const big = JSON.stringify({ text: "x".repeat(MAX_JSON_BODY_BYTES) });
+    const res = await POST(
+      new Request("http://localhost/api/v1/x", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": "10" },
+        body: big,
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("still accepts a body under the cap", async () => {
+    const res = await callRoute(POST, { body: { text: "x".repeat(200_000) } });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("request ids", () => {
+  const GET = apiRoute(async ({ requestId }) => ({ requestId }));
+
+  it("does not echo a client request id that is not a short token", async () => {
+    for (const unsafe of ["<script>alert(1)</script>", "x".repeat(200), "a b"]) {
+      const res = await callRoute(GET, { headers: { "x-request-id": unsafe } });
+      expect(res.headers.get("x-request-id")).toMatch(/^req_[0-9a-f]{16}$/);
+      expect(res.body.data.requestId).toMatch(/^req_[0-9a-f]{16}$/);
+    }
   });
 });

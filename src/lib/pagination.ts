@@ -8,6 +8,13 @@ export const pageQuerySchema = z.object({
 });
 export type PageQuery = z.output<typeof pageQuerySchema>;
 
+/**
+ * The cursor of every "newest first" list: the last row's timestamp and id. Strict, because a
+ * cursor comes back from the client: a bad date or a non-UUID id is a 400, never a database error.
+ * It only positions the page; every list query keeps its own ownership filter.
+ */
+export const timeIdCursorSchema = z.object({ t: z.iso.datetime(), id: z.guid() });
+
 /** Opaque cursor: base64url-encoded JSON. Clients must treat it as a black box. */
 export function encodeCursor(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");

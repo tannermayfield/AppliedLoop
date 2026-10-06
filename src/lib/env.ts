@@ -1,3 +1,4 @@
+import "server-only"; // secrets live here: importing this from browser code is a build error
 import { z } from "zod";
 
 // All configuration is read through here, validated once, and never exposed to the browser.
@@ -62,6 +63,8 @@ export interface Env {
 }
 
 const TEST_SECRET = "test-secret-test-secret-test-secret-0123456789";
+/** 32 random bytes in base64 is 44 characters; anything under 32 is not a generated secret. */
+const MIN_PRODUCTION_SECRET_LENGTH = 32;
 
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
   const raw = rawSchema.parse(source);
@@ -70,16 +73,23 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   if (isProduction && raw.AUTH_DEV_LOGIN) {
     throw new Error("AUTH_DEV_LOGIN must not be enabled in production.");
   }
+  // Demo answers are canned. A deployed app must never show them to students as its AI.
+  if (isProduction && raw.AI_MODE === "demo") {
+    throw new Error("AI_MODE=demo is for development only. Use AI_MODE=live or off in production.");
+  }
 
+  const generate = `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`;
   let authSecret = raw.BETTER_AUTH_SECRET;
   if (!authSecret) {
     if (raw.NODE_ENV === "test") authSecret = TEST_SECRET;
-    else {
-      throw new Error(
-        "BETTER_AUTH_SECRET is required. Generate one with: " +
-          `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
-      );
-    }
+    else throw new Error(`BETTER_AUTH_SECRET is required. Generate one with: ${generate}`);
+  }
+  // It signs the session cookie cache and encrypts OAuth tokens: a guessable one forges sessions.
+  if (isProduction && authSecret.length < MIN_PRODUCTION_SECRET_LENGTH) {
+    throw new Error(
+      `BETTER_AUTH_SECRET must be at least ${MIN_PRODUCTION_SECRET_LENGTH} characters in production. ` +
+        `Generate one with: ${generate}`,
+    );
   }
 
   const pair = (id?: string, secret?: string): OAuthCredentials | undefined =>

@@ -20,8 +20,34 @@ export const logger = {
   error: (message: string, fields?: Fields) => write("error", message, fields),
 };
 
-/** Serialize an unknown thrown value for logging without leaking object internals. */
+const MAX_LOGGED_MESSAGE = 500;
+
+function clip(text: string): string {
+  return text.length > MAX_LOGGED_MESSAGE ? `${text.slice(0, MAX_LOGGED_MESSAGE - 1)}…` : text;
+}
+
+/**
+ * A failed database query (drizzle's DrizzleQueryError) puts its SQL AND its parameter values in
+ * `message`, and those values are student data: pasted code, emails, notes. Recognized by shape,
+ * so this module stays free of dependencies.
+ */
+function isQueryError(error: Error): error is Error & { query: unknown; params: unknown } {
+  return "query" in error && "params" in error;
+}
+
+/** Serialize an unknown thrown value for logging without leaking object internals or data. */
 export function errorFields(error: unknown): Fields {
-  if (error instanceof Error) return { errorName: error.name, errorMessage: error.message };
-  return { errorMessage: String(error) };
+  if (error instanceof Error) {
+    if (isQueryError(error)) {
+      // What failed (the driver's own message and SQLSTATE), never the values that were sent.
+      const cause = error.cause as { message?: unknown; code?: unknown } | undefined;
+      return {
+        errorName: "DrizzleQueryError",
+        errorMessage: typeof cause?.message === "string" ? clip(cause.message) : "Query failed",
+        ...(typeof cause?.code === "string" && { errorCode: cause.code }),
+      };
+    }
+    return { errorName: error.name, errorMessage: clip(error.message) };
+  }
+  return { errorMessage: clip(String(error)) };
 }

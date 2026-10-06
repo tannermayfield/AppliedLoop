@@ -125,6 +125,15 @@ app.clock.advance(60_000);                                 // controllable time
 - Every list has an empty state (what it is for + the one next step), every async action a pending state, every failure a message that says what to do next. Mobile first: 16 px gutters, no horizontal scroll, tab bar on phones. Accessibility: labels on every input, visible focus, keyboard operable, `aria-live` for async status, 4.5:1 contrast, respect reduced motion.
 - Routes (so slices agree on links): `/today` `/learn` `/projects` `/projects/new` `/projects/[id]` · `/apply/new?projectId=&conceptId=` · `/build/new?projectId=` · `/sessions/[id]` (mode-aware) · `/sessions/[id]/extract` · `/evidence` `/evidence/new?sessionId=&projectId=&conceptId=` `/evidence/[id]` · `/settings` (account menu, not a primary nav item: profile, AI-data disclosure, data export, account deletion) · `/onboarding` (outside the shell).
 
+## Security (see [SECURITY_REVIEW.md](SECURITY_REVIEW.md))
+
+- Headers: `src/proxy.ts` gives every page a nonce-based CSP (`src/lib/security/csp.ts`); `next.config.ts` adds the static headers. An inline `<script>` you render needs `(await headers()).get("x-nonce")`; a new external origin (images, fonts, APIs) must be added to the CSP on purpose.
+- A link built from student-provided text uses `webHref()` from `src/lib/safe-url.ts` (http(s) only) with `target="_blank" rel="noopener noreferrer"`.
+- Request bodies: `parseBody`/`readJson` cap them at 1 MiB. Code that needs the raw bytes (a signed webhook) uses `readBodyText(req, limit)`. Only a non-cookie, signature-authenticated endpoint may skip `assertSameOrigin`, and it must say so explicitly.
+- Logs: pass errors through `errorFields()`, which never logs SQL parameters. Never log request bodies, prompts or provider payloads.
+- `src/lib/env.ts` is `server-only`. Production refuses to boot with `AUTH_DEV_LOGIN`, `AI_MODE=demo`, or a `BETTER_AUTH_SECRET` under 32 characters.
+- A new table must cascade from `users`: `tests/integration/security/account-deletion.test.ts` fails until `populate()` has a row for it.
+
 ## Conventions
 
 - TypeScript strict; no `any` (a justified `// eslint-disable-next-line` with a reason is acceptable in tests). Prettier defaults + 100 columns; double quotes, semicolons.

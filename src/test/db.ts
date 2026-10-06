@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { getTableName, is, sql } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
-import { connectPglite, type DbHandle } from "../lib/db/connect";
+import { Pool } from "pg";
+import { connectPglite, connectPostgres, type DbHandle } from "../lib/db/connect";
 import * as schema from "../lib/db/schema";
 
 const ALL_TABLES: PgTable[] = [];
@@ -13,15 +15,47 @@ export interface TestDb extends DbHandle {
   reset(): Promise<void>;
 }
 
-/** A throwaway in-memory Postgres (PGlite) with all migrations applied. One per test file. */
+/**
+ * A throwaway Postgres with all migrations applied. One per test file.
+ *
+ * Default: in-memory PGlite. Set `TEST_DATABASE_URL` (a role that may CREATE DATABASE) to run the
+ * same suite on a real Postgres server instead: each test file gets its own scratch database,
+ * dropped on close. That is how row locks, advisory locks and `ON CONFLICT` get exercised for real.
+ */
 export async function createTestDb(): Promise<TestDb> {
-  const handle = await connectPglite();
+  const adminUrl = process.env.TEST_DATABASE_URL?.trim();
+  const handle = adminUrl ? await createScratchPostgres(adminUrl) : await connectPglite();
   await handle.migrate();
   const tableList = ALL_TABLES.map((table) => `"${getTableName(table)}"`).join(", ");
   return {
     ...handle,
     reset: async () => {
       await handle.db.execute(sql.raw(`truncate table ${tableList} restart identity cascade`));
+    },
+  };
+}
+
+async function createScratchPostgres(adminUrl: string): Promise<DbHandle> {
+  const name = `appliedloop_test_${randomUUID().replaceAll("-", "")}`;
+  const admin = new Pool({ connectionString: adminUrl, max: 1 });
+  try {
+    await admin.query(`create database "${name}"`);
+  } finally {
+    await admin.end();
+  }
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  const scratch = connectPostgres(url.toString());
+  return {
+    ...scratch,
+    close: async () => {
+      await scratch.close();
+      const cleanup = new Pool({ connectionString: adminUrl, max: 1 });
+      try {
+        await cleanup.query(`drop database if exists "${name}" with (force)`);
+      } finally {
+        await cleanup.end();
+      }
     },
   };
 }

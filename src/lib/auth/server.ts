@@ -3,9 +3,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { eq } from "drizzle-orm";
+import { AUTH_COPY } from "../copy-auth";
 import { getDb } from "../db/client";
 import { authAccounts, authSessions, authVerifications, userProfiles, users } from "../db/schema";
 import { getEnv } from "../env";
+import { isEmailAllowed, signUpRefusal } from "./policy";
 
 // Better Auth lives ONLY in lib/auth. Domain code receives an AuthContext and never imports this
 // library (ADR-0002). Sign-in is OAuth (GitHub / Google). A passwordless-looking "dev login" exists
@@ -30,6 +33,10 @@ async function buildAuth() {
       },
     }),
     advanced: { database: { generateId: "uuid" } },
+    // Built-in endpoints the browser never needs. /update-user takes any name or image (bypassing
+    // PATCH /api/v1/me/profile validation); the other three would hand the provider's OAuth tokens
+    // or account details to page scripts. Server-side `auth.api.*` calls are not affected.
+    disabledPaths: ["/update-user", "/get-access-token", "/refresh-token", "/account-info"],
     session: {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
@@ -50,18 +57,31 @@ async function buildAuth() {
     databaseHooks: {
       user: {
         create: {
-          // Optional pilot gate: only invited emails may create an account.
+          // Only an invited (optional pilot gate), provider-verified address gets an account.
           before: async (user) => {
-            const allowed = env.allowedEmails;
-            if (allowed.length > 0 && !allowed.includes(user.email.toLowerCase())) {
-              throw new APIError("FORBIDDEN", {
-                message: "This pilot is invite-only, and that email isn't on the list yet.",
-              });
-            }
+            const refusal = signUpRefusal(user, env);
+            if (refusal) throw new APIError("FORBIDDEN", { message: refusal });
             return { data: user };
           },
           after: async (user) => {
             await db.insert(userProfiles).values({ userId: user.id }).onConflictDoNothing();
+          },
+        },
+      },
+      session: {
+        create: {
+          // The pilot gate holds on every sign-in, not only the first: an address removed from
+          // AUTH_ALLOWED_EMAILS gets no new session (getAuthContext ends the existing ones).
+          before: async (session) => {
+            if (env.allowedEmails.length === 0) return;
+            const [owner] = await db
+              .select({ email: users.email })
+              .from(users)
+              .where(eq(users.id, session.userId))
+              .limit(1);
+            if (!isEmailAllowed(owner?.email, env.allowedEmails)) {
+              throw new APIError("FORBIDDEN", { message: AUTH_COPY.inviteOnly });
+            }
           },
         },
       },

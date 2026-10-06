@@ -4,9 +4,10 @@ import type { AppContext } from "@/lib/context";
 import { concepts, learningSources } from "@/lib/db/schema";
 import { LEARNING_SOURCE_TYPES } from "@/lib/db/schema/enums";
 import { ownedBy, requireRow } from "@/lib/ownership";
-import { decodeCursor, pageOf, pageQuerySchema } from "@/lib/pagination";
+import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
 import { parseOrThrow } from "@/lib/errors";
 import { emit } from "@/lib/telemetry/emit";
+import { idOrNotFound } from "./skills";
 
 // Learning sources: courses, self-study, work, other. This module is the REFERENCE for how a
 // domain module looks: Zod input schemas next to the functions, `(c: AppContext, input)` first
@@ -47,15 +48,13 @@ export type ListSourcesQuery = z.input<typeof listSourcesQuery>;
 export type LearningSource = typeof learningSources.$inferSelect;
 export type LearningSourceWithCount = LearningSource & { conceptCount: number };
 
-const cursorSchema = z.object({ t: z.string(), id: z.string() });
-
 export async function listSources(c: AppContext, raw: ListSourcesQuery = {}) {
   const query = parseOrThrow(listSourcesQuery, raw);
 
   const conditions = [ownedBy(learningSources.userId, c.auth)];
   if (query.active !== "all") conditions.push(eq(learningSources.active, query.active === "true"));
   if (query.cursor) {
-    const after = decodeCursor(query.cursor, cursorSchema);
+    const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);
     conditions.push(
       or(
@@ -97,10 +96,11 @@ export async function createSource(c: AppContext, raw: CreateSourceInput): Promi
 
 export async function updateSource(
   c: AppContext,
-  id: string,
+  rawId: string,
   raw: UpdateSourceInput,
 ): Promise<LearningSource> {
   const input = parseOrThrow(updateSourceInput, raw);
+  const id = idOrNotFound(rawId, "Learning source");
   const [row] = await c.db
     .update(learningSources)
     .set({ ...input, updatedAt: c.now() })
@@ -115,8 +115,9 @@ export async function updateSource(
  */
 export async function removeSource(
   c: AppContext,
-  id: string,
+  rawId: string,
 ): Promise<{ outcome: "deleted" | "archived" }> {
+  const id = idOrNotFound(rawId, "Learning source");
   const [source] = await c.db
     .select({ id: learningSources.id })
     .from(learningSources)

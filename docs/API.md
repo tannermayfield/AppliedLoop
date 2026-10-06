@@ -41,6 +41,14 @@ Use UUIDs, UTC ISO-8601 timestamps, server-side schema validation, cursor pagina
 - **Idempotency:** completing an already-completed session returns the stored result with `200`; completing an abandoned or switched session returns `409 CONFLICT`. A second `POST /extractions` for the same build session returns the existing extraction.
 - **[proposed] error codes:** `VALIDATION_ERROR` (400), `UNAUTHENTICATED` (401), `NOT_FOUND` (404), `CONFLICT` (409), `AI_DISABLED_FOR_PROJECT` (409), `RATE_LIMITED` (429), `AI_UNAVAILABLE` (503), `INTERNAL` (500).
 
+**Request rules (as implemented; see [SECURITY_REVIEW.md](SECURITY_REVIEW.md))**
+
+- Two more codes are in use: `FORBIDDEN` (403, a cross-site write) and `AI_INVALID_OUTPUT` (502). AI errors carry no `details`.
+- Writes (`POST`/`PUT`/`PATCH`/`DELETE`) must come from the app's own origin: a foreign `Origin`, or `Sec-Fetch-Site: cross-site | same-site`, is `403 FORBIDDEN`. A body must be `application/json` and at most 1 MiB, otherwise `400 VALIDATION_ERROR`.
+- A malformed path id is `404 NOT_FOUND`; a tampered cursor is `400 VALIDATION_ERROR`.
+- Every response carries `x-request-id` (a client-sent value is kept only if it matches `[A-Za-z0-9._:-]{1,64}`) and `Cache-Control: no-store`.
+- Better Auth's `/api/auth/update-user`, `/get-access-token`, `/refresh-token` and `/account-info` are disabled (404).
+
 ## API surface
 
 **v0** marks the experimental v0 scope; **P1** is the GitHub integration (deferred; v0 takes pasted repository URLs and artifact links); **v1** marks the account and privacy controls added after v0 (owner-approved 2026-10-06 under SPEC §6: "expose deletion controls").

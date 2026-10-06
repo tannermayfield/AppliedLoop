@@ -11,7 +11,7 @@ import {
 } from "@/lib/db/schema/enums";
 import { ConflictError, parseOrThrow } from "@/lib/errors";
 import { ownedBy, requireRow } from "@/lib/ownership";
-import { decodeCursor, pageOf, pageQuerySchema } from "@/lib/pagination";
+import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
 import { emit } from "@/lib/telemetry/emit";
 
 // Learning debt, shown to students as "Needs Review" (SPEC_REVIEW R-21). A row exists only because
@@ -98,8 +98,6 @@ export const listDebtQuery = pageQuerySchema.extend({
 });
 export type ListDebtQuery = z.input<typeof listDebtQuery>;
 
-const cursorSchema = z.object({ t: z.string(), id: z.string() });
-
 /** `GET /learning-debt`: newest first. */
 export async function listDebt(
   c: AppContext,
@@ -114,7 +112,7 @@ export async function listDebt(
   ];
   if (query.projectId) conditions.push(eq(learningDebtItems.projectId, query.projectId));
   if (query.cursor) {
-    const after = decodeCursor(query.cursor, cursorSchema);
+    const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);
     conditions.push(
       or(

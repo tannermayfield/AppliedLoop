@@ -5,11 +5,10 @@ import { formatDate } from "@/components/learning/format";
 import type { EvidenceDto } from "@/domain/evidence/evidence";
 import { CONTRIBUTION_LABELS } from "@/lib/copy";
 import { ARTIFACT_LABELS, evidenceCopy } from "@/lib/copy-evidence";
+import { webHref } from "@/lib/safe-url";
 import { excerpt } from "./group";
 
 const copy = evidenceCopy.list;
-
-const isWebLink = (value: string) => /^https?:\/\//i.test(value);
 
 /** The artifact as a link when it is a web address, otherwise as plain text (a sha or a path). */
 export function ArtifactRef({
@@ -20,10 +19,11 @@ export function ArtifactRef({
   value: string | null;
 }) {
   if (type === "NOTE" || !value) return <span>{ARTIFACT_LABELS.NOTE}</span>;
-  if (isWebLink(value)) {
+  const href = webHref(value);
+  if (href) {
     return (
       <a
-        href={value}
+        href={href}
         target="_blank"
         rel="noreferrer noopener"
         className="inline-flex max-w-full items-center gap-1 underline underline-offset-4"
