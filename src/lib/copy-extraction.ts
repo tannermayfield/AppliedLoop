@@ -24,7 +24,8 @@ export const EXTRACTION_COPY = {
   selfCheck: "A question to check yourself",
   howComfortable: "How comfortable are you? (optional)",
   disposition: "What would you like to do?",
-  alreadyInLibrary: "Already in your library",
+  // Shown only for a concept the student already had when the review began (audit F-18).
+  inLibrary: "In your library",
   suggestHighlight: "Adding it to Needs Review keeps it on your radar. Your call.",
   saving: "Saving…",
   saved: "Saved.",

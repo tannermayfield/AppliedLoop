@@ -71,7 +71,11 @@ export const aiRuns = pgTable(
     errorMessage: text("error_message"),
     createdAt: createdAt(),
   },
-  (t) => [index("ai_runs_user_created_idx").on(t.userId, t.createdAt.desc())],
+  (t) => [
+    index("ai_runs_user_created_idx").on(t.userId, t.createdAt.desc()),
+    // Foreign-key lookups on the child side (deleting a session sets this to null).
+    index("ai_runs_session_idx").on(t.sessionId),
+  ],
 );
 
 export const practiceOpportunities = pgTable(
@@ -97,7 +101,12 @@ export const practiceOpportunities = pgTable(
     aiRunId: uuid("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (t) => [index("practice_opportunities_user_concept_idx").on(t.userId, t.conceptId, t.projectId)],
+  (t) => [
+    index("practice_opportunities_user_concept_idx").on(t.userId, t.conceptId, t.projectId),
+    index("practice_opportunities_project_idx").on(t.projectId),
+    index("practice_opportunities_concept_idx").on(t.conceptId),
+    index("practice_opportunities_ai_run_idx").on(t.aiRunId),
+  ],
 );
 
 export const sessions = pgTable(
@@ -135,6 +144,9 @@ export const sessions = pgTable(
   (t) => [
     index("sessions_user_status_started_idx").on(t.userId, t.status, t.startedAt.desc()),
     index("sessions_project_idx").on(t.projectId),
+    index("sessions_concept_idx").on(t.conceptId),
+    index("sessions_opportunity_idx").on(t.opportunityId),
+    index("sessions_parent_idx").on(t.parentSessionId),
     check("sessions_hint_level_range", sql`${t.hintLevel} between 0 and 3`),
     check("sessions_hint_only_apply", sql`${t.type} = 'APPLY' or ${t.hintLevel} = 0`),
     check("sessions_switched_only_apply", sql`${t.status} <> 'SWITCHED' or ${t.type} = 'APPLY'`),
@@ -156,7 +168,10 @@ export const sessionMessages = pgTable(
     metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: createdAt(),
   },
-  (t) => [index("session_messages_session_created_idx").on(t.sessionId, t.createdAt)],
+  (t) => [
+    index("session_messages_session_created_idx").on(t.sessionId, t.createdAt),
+    index("session_messages_user_idx").on(t.userId),
+  ],
 );
 
 /** Immutable history of every concept stage change. SPEC_REVIEW R-01, R-18. */
@@ -177,28 +192,39 @@ export const progressEvents = pgTable(
     sessionId: uuid("session_id").references(() => sessions.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
-  (t) => [index("progress_events_user_concept_idx").on(t.userId, t.conceptId, t.createdAt)],
+  (t) => [
+    index("progress_events_user_concept_idx").on(t.userId, t.conceptId, t.createdAt),
+    index("progress_events_concept_idx").on(t.conceptId),
+    index("progress_events_session_idx").on(t.sessionId),
+  ],
 );
 
-export const extractions = pgTable("extractions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  /** One extraction per BUILD session: the unique constraint is what makes extraction idempotent. */
-  buildSessionId: uuid("build_session_id")
-    .notNull()
-    .unique()
-    .references(() => sessions.id, { onDelete: "cascade" }),
-  aiRunId: uuid("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
-  status: extractionStatusEnum("status").notNull().default("READY"),
-  summary: text("summary").notNull().default(""),
-  artifactRefsJson: jsonb("artifact_refs_json")
-    .$type<{ type: ArtifactType; value: string }[]>()
-    .notNull()
-    .default([]),
-  createdAt: createdAt(),
-});
+export const extractions = pgTable(
+  "extractions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** One extraction per BUILD session: the unique constraint is what makes extraction idempotent. */
+    buildSessionId: uuid("build_session_id")
+      .notNull()
+      .unique()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    aiRunId: uuid("ai_run_id").references(() => aiRuns.id, { onDelete: "set null" }),
+    status: extractionStatusEnum("status").notNull().default("READY"),
+    summary: text("summary").notNull().default(""),
+    artifactRefsJson: jsonb("artifact_refs_json")
+      .$type<{ type: ArtifactType; value: string }[]>()
+      .notNull()
+      .default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("extractions_user_idx").on(t.userId),
+    index("extractions_ai_run_idx").on(t.aiRunId),
+  ],
+);
 
 export const extractionItems = pgTable(
   "extraction_items",
@@ -229,6 +255,8 @@ export const extractionItems = pgTable(
   },
   (t) => [
     index("extraction_items_extraction_idx").on(t.extractionId),
+    index("extraction_items_user_idx").on(t.userId),
+    index("extraction_items_concept_idx").on(t.normalizedConceptId),
     check(
       "extraction_items_confidence_range",
       sql`${t.modelConfidence} is null or ${t.modelConfidence} between 0 and 1`,
@@ -264,6 +292,11 @@ export const learningDebtItems = pgTable(
   (t) => [
     index("learning_debt_user_status_priority_idx").on(t.userId, t.status, t.priority),
     index("learning_debt_user_project_status_idx").on(t.userId, t.projectId, t.status),
+    // The unique index below is partial (open items only), so it cannot serve these lookups.
+    index("learning_debt_concept_idx").on(t.conceptId),
+    index("learning_debt_project_idx").on(t.projectId),
+    index("learning_debt_session_idx").on(t.sourceSessionId),
+    index("learning_debt_extraction_item_idx").on(t.extractionItemId),
     // A concept can be "needing review" only once at a time.
     uniqueIndex("learning_debt_one_open_per_concept_uq")
       .on(t.userId, t.conceptId)
@@ -307,6 +340,7 @@ export const evidenceItems = pgTable(
   (t) => [
     index("evidence_user_created_idx").on(t.userId, t.createdAt.desc()),
     index("evidence_project_idx").on(t.projectId),
+    index("evidence_session_idx").on(t.sessionId),
     index("evidence_github_artifact_idx").on(t.githubArtifactId),
   ],
 );
@@ -321,7 +355,11 @@ export const evidenceConcepts = pgTable(
       .notNull()
       .references(() => concepts.id, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.evidenceId, t.conceptId] })],
+  (t) => [
+    primaryKey({ columns: [t.evidenceId, t.conceptId] }),
+    // The key leads with evidence_id; "which evidence uses this concept" needs its own index.
+    index("evidence_concepts_concept_idx").on(t.conceptId),
+  ],
 );
 
 export const evidenceSkills = pgTable(
@@ -334,7 +372,10 @@ export const evidenceSkills = pgTable(
       .notNull()
       .references(() => skills.id, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.evidenceId, t.skillId] })],
+  (t) => [
+    primaryKey({ columns: [t.evidenceId, t.skillId] }),
+    index("evidence_skills_skill_idx").on(t.skillId),
+  ],
 );
 
 export const eventLog = pgTable(

@@ -1,41 +1,31 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { api } from "@/components/sessions/api";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { BUILD_COPY } from "@/lib/copy-build";
 import { SESSION_LIMITS } from "@/lib/copy-sessions";
+import { useNotesSaver } from "./notes-saver-context";
 
 const t = BUILD_COPY.session;
-const DEBOUNCE_MS = 800;
 
-type SaveState = "idle" | "saving" | "saved" | "failed";
-
-/** Session notes with a debounced autosave (PATCH /api/v1/sessions/:id/notes). */
-export function NotesEditor({ sessionId, initial }: { sessionId: string; initial: string }) {
+/**
+ * Session notes with a debounced autosave (PATCH /api/v1/sessions/:id/notes). The saving itself
+ * lives in the shared notes saver, so "Finish & Extract" can flush it first (audit F-17). Rendered
+ * inside a `NotesSaverProvider`.
+ */
+export function NotesEditor({ initial }: { initial: string }) {
   const id = useId();
+  const saver = useNotesSaver();
   const [notes, setNotes] = useState(initial);
-  const [state, setState] = useState<SaveState>("idle");
-  const lastSaved = useRef(initial);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (notes === lastSaved.current) return;
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      setState("saving");
-      const value = notes;
-      const result = await api(`/api/v1/sessions/${sessionId}/notes`, {
-        method: "PATCH",
-        body: { notes: value },
-      });
-      if (result.ok) lastSaved.current = value;
-      setState(result.ok ? "saved" : "failed");
-    }, DEBOUNCE_MS);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [notes, sessionId]);
+  const subscribe = useCallback(
+    (listener: () => void) => saver?.subscribe(listener) ?? (() => undefined),
+    [saver],
+  );
+  const state = useSyncExternalStore(
+    subscribe,
+    () => saver?.state() ?? "idle",
+    () => "idle",
+  );
 
   const message =
     state === "saving"
@@ -59,7 +49,10 @@ export function NotesEditor({ sessionId, initial }: { sessionId: string; initial
         value={notes}
         maxLength={SESSION_LIMITS.maxNotesChars}
         placeholder={t.notesPlaceholder}
-        onChange={(event) => setNotes(event.target.value)}
+        onChange={(event) => {
+          setNotes(event.target.value);
+          saver?.change(event.target.value);
+        }}
         className="min-h-28"
       />
       <p

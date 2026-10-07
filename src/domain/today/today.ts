@@ -1,4 +1,4 @@
-import { and, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "@/lib/context";
 import { parseOrThrow } from "@/lib/errors";
@@ -69,16 +69,22 @@ function hourIn(now: Date, timeZone: string): number {
 
 /** `GET /today`: the ordered action cards plus the Needs Review strip. Emits `today_viewed`. */
 export async function getToday(c: AppContext): Promise<TodayView> {
-  const [me, data, flags] = await Promise.all([getMe(c), loadTodayInput(c), loadFlags(c)]);
+  const [me, { input: data, openDebtTotal }, flags] = await Promise.all([
+    getMe(c),
+    loadTodayInput(c),
+    loadFlags(c),
+  ]);
 
   const cards = selectTodayActions(data);
   await emit(c, "today_viewed", { metadata: { card_types: cards.map((card) => card.type) } });
 
+  const needsReview = summarizeNeedsReview(data.debt);
   return {
     greetingName: me.name.trim().split(/\s+/)[0] ?? "",
     timezone: me.profile.timezone,
     cards,
-    needsReview: summarizeNeedsReview(data.debt),
+    // The strip counts ALL open items even when only the first MAX_OPEN_DEBT_ROWS were read.
+    needsReview: { ...needsReview, count: Math.max(needsReview.count, openDebtTotal) },
     ...flags,
   };
 }
@@ -114,7 +120,9 @@ export async function recordClientEvent(c: AppContext, raw: ClientEventInput): P
 
 // ── Loading ─────────────────────────────────────────────────────────────────────────────────────
 
-async function loadTodayInput(c: AppContext): Promise<TodayInput> {
+async function loadTodayInput(
+  c: AppContext,
+): Promise<{ input: TodayInput; openDebtTotal: number }> {
   const now = c.now();
   const [sessionRows, debt, conceptRows, projectRows] = await Promise.all([
     loadActiveSessions(c),
@@ -122,7 +130,16 @@ async function loadTodayInput(c: AppContext): Promise<TodayInput> {
     loadRecentConcepts(c, now),
     loadActiveProjects(c),
   ]);
-  return { now, sessions: sessionRows, debt, concepts: conceptRows, projects: projectRows };
+  return {
+    input: {
+      now,
+      sessions: sessionRows,
+      debt: debt.rows,
+      concepts: conceptRows,
+      projects: projectRows,
+    },
+    openDebtTotal: debt.total,
+  };
 }
 
 async function loadActiveSessions(c: AppContext): Promise<TodaySession[]> {
@@ -152,8 +169,15 @@ async function loadActiveSessions(c: AppContext): Promise<TodaySession[]> {
   }));
 }
 
-async function loadOpenDebt(c: AppContext): Promise<TodayDebt[]> {
-  const rows = await c.db
+/**
+ * The most open Needs Review items Today reads. They arrive in review order (pinned, then priority,
+ * then the longest-waiting, the order `select-actions.ts` uses), so every card and the names on
+ * the strip are always inside the cap; `total` is the exact number of open items regardless.
+ */
+export const MAX_OPEN_DEBT_ROWS = 200;
+
+async function loadOpenDebt(c: AppContext): Promise<{ rows: TodayDebt[]; total: number }> {
+  const result = await c.db
     .select({
       id: learningDebtItems.id,
       conceptId: learningDebtItems.conceptId,
@@ -163,6 +187,7 @@ async function loadOpenDebt(c: AppContext): Promise<TodayDebt[]> {
       pinned: learningDebtItems.pinned,
       status: learningDebtItems.status,
       createdAt: learningDebtItems.createdAt,
+      total: sql<number>`count(*) over ()`.mapWith(Number),
     })
     .from(learningDebtItems)
     .innerJoin(
@@ -174,8 +199,16 @@ async function loadOpenDebt(c: AppContext): Promise<TodayDebt[]> {
         ownedBy(learningDebtItems.userId, c.auth),
         inArray(learningDebtItems.status, ["OPEN", "PLANNED"]),
       ),
-    );
-  return rows;
+    )
+    .orderBy(
+      desc(learningDebtItems.pinned),
+      desc(learningDebtItems.priority),
+      asc(learningDebtItems.createdAt),
+      asc(learningDebtItems.id),
+    )
+    .limit(MAX_OPEN_DEBT_ROWS);
+  // Every row carries the same window count; only the first one is read.
+  return { rows: result, total: result[0]?.total ?? 0 };
 }
 
 /** Concepts captured or moved inside the window; the ranking applies the exact edge itself. */
@@ -273,26 +306,20 @@ async function loadSkillIds(c: AppContext, conceptIds: string[]): Promise<Map<st
 async function loadFlags(
   c: AppContext,
 ): Promise<Pick<TodayView, "hasSource" | "hasProject" | "hasConcepts">> {
-  const [source, project, concept] = await Promise.all([
-    c.db
-      .select({ id: learningSources.id })
-      .from(learningSources)
-      .where(ownedBy(learningSources.userId, c.auth))
-      .limit(1),
-    c.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(ownedBy(projects.userId, c.auth))
-      .limit(1),
-    c.db
-      .select({ id: concepts.id })
-      .from(concepts)
-      .where(ownedBy(concepts.userId, c.auth))
-      .limit(1),
-  ]);
+  // One round trip for the three "has anything yet?" questions. Every subquery is scoped with
+  // `ownedBy`, like any other read of a user-owned table.
+  const result = (await c.db.execute(sql`
+    select
+      exists (select 1 from ${learningSources} where ${ownedBy(learningSources.userId, c.auth)}) as has_source,
+      exists (select 1 from ${projects} where ${ownedBy(projects.userId, c.auth)}) as has_project,
+      exists (select 1 from ${concepts} where ${ownedBy(concepts.userId, c.auth)}) as has_concepts
+  `)) as unknown as {
+    rows: { has_source: boolean; has_project: boolean; has_concepts: boolean }[];
+  };
+  const [flags] = result.rows;
   return {
-    hasSource: source.length > 0,
-    hasProject: project.length > 0,
-    hasConcepts: concept.length > 0,
+    hasSource: flags.has_source,
+    hasProject: flags.has_project,
+    hasConcepts: flags.has_concepts,
   };
 }

@@ -8,6 +8,7 @@ import { ManualConceptAdd } from "@/components/extraction/manual-concept-add";
 import { RetryExtraction } from "@/components/extraction/retry-extraction";
 import { ModeBadge } from "@/components/mode-badge";
 import { PageHeader } from "@/components/page-header";
+import { TutorMarkdown } from "@/components/sessions/markdown";
 import { getExtractionForSession } from "@/domain/extraction/extract";
 import { getSession } from "@/domain/sessions/sessions";
 import { getPageContext } from "@/lib/app-context";
@@ -58,7 +59,9 @@ export default async function ExtractPage({ params }: { params: Promise<{ id: st
           <h2 id="changed-heading" className="font-display text-xl font-semibold">
             {t.whatChanged}
           </h2>
-          <p className="text-sm whitespace-pre-wrap">{summary || t.noSummary}</p>
+          {/* The summary is usually an agent's closing message, written in Markdown: render it
+              with the same safe renderer as tutor replies (no raw HTML, no images). */}
+          {summary ? <TutorMarkdown>{summary}</TutorMarkdown> : <p className="text-sm">{t.noSummary}</p>}
           {extraction && extraction.artifactRefs.length > 0 && (
             <ul aria-label={t.artifacts} className="flex flex-wrap gap-1.5">
               {extraction.artifactRefs.map((ref, index) => (

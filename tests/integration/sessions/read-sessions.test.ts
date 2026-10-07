@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getSession, listSessions } from "@/domain/sessions/sessions";
+import { MAX_THREAD_MESSAGES, getSession, listSessions } from "@/domain/sessions/sessions";
+import { sessionMessages } from "@/lib/db/schema";
 import { NotFoundError, ValidationError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertConcept, insertProject, insertSession } from "@/test/factories";
@@ -74,6 +75,34 @@ describe("reading sessions", () => {
 
       expect(detail).toMatchObject({ type: "BUILD", concept: null, opportunity: null });
       expect(detail.messages).toEqual([]);
+    });
+
+    it("returns at most the newest MAX_THREAD_MESSAGES messages, still oldest first", async () => {
+      const alice = await app.makeUser();
+      const { session } = await insertApplySetup(app.db, alice.id);
+      const extra = 5;
+      const total = MAX_THREAD_MESSAGES + extra;
+      // Raw bulk insert: one statement, not 505 factory calls.
+      await app.db.insert(sessionMessages).values(
+        Array.from({ length: total }, (_, n) => ({
+          sessionId: session.id,
+          userId: alice.id,
+          role: n % 2 === 0 ? ("USER" as const) : ("ASSISTANT" as const),
+          content: `message ${n}`,
+          createdAt: new Date(Date.UTC(2026, 9, 6, 15) + n * 1000),
+        })),
+      );
+
+      const { messages } = await getSession(alice.ctx, session.id);
+
+      expect(messages).toHaveLength(MAX_THREAD_MESSAGES);
+      // The five oldest are the ones left out; the rest keep their order.
+      expect(messages[0].content).toBe(`message ${extra}`);
+      expect(messages.at(-1)?.content).toBe(`message ${total - 1}`);
+      const times = messages.map((message) => new Date(message.createdAt).getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+      // Nothing is deleted: the full thread is still stored.
+      expect(await app.db.select().from(sessionMessages)).toHaveLength(total);
     });
 
     it("links a switched Apply session to the Build session that continued it", async () => {
@@ -167,9 +196,9 @@ describe("reading sessions", () => {
 
     it("rejects unknown filter values and a tampered cursor", async () => {
       const alice = await app.makeUser();
-      await expect(
-        listSessions(alice.ctx, { status: "PAUSED" as never }),
-      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(listSessions(alice.ctx, { status: "PAUSED" as never })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
       await expect(listSessions(alice.ctx, { cursor: "garbage" })).rejects.toBeInstanceOf(
         ValidationError,
       );

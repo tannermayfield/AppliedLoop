@@ -15,7 +15,7 @@ import { ConflictError, NotFoundError, parseOrThrow } from "@/lib/errors";
 import { normalizeConceptName } from "@/lib/normalize";
 import { ownedBy, requireRow } from "@/lib/ownership";
 import { decodeCursor, pageOf, pageQuerySchema, timeIdCursorSchema } from "@/lib/pagination";
-import { emit } from "@/lib/telemetry/emit";
+import { emitMany } from "@/lib/telemetry/emit";
 import { getStageHistory, type ProgressEventDto } from "./progress";
 import {
   assertSkillsAccessible,
@@ -260,54 +260,96 @@ type ParsedItem = z.output<typeof createConceptItem>;
 type Inserted = { created: true; id: string } | { created: false; existingConceptId: string };
 
 /**
- * One new concept with its progress row, skills and `concept_captured` event, or the id of the
- * concept that already has this name. ON CONFLICT (not a pre-check) so a double submit is safe.
+ * New concepts with their progress rows, skills and `concept_captured` events, or, for a name the
+ * student already has, the id of the concept that holds it. One result per item, in order.
+ *
+ * A FIXED number of statements however many items there are (multi-row inserts), not a few per
+ * item: confirming twelve captured concepts used to cost 75 statements. ON CONFLICT (not a
+ * pre-check) keeps a double submit safe. A name repeated inside the batch is created once, by its
+ * first item; the repeats point at that concept.
  */
-async function insertConcept(
+async function insertConcepts(
   c: AppContext,
-  item: ParsedItem,
+  items: ParsedItem[],
   via: "CAPTURE" | "MANUAL",
   editedBeforeConfirm: boolean,
-): Promise<Inserted> {
-  const normalizedName = normalizeConceptName(item.name);
+): Promise<Inserted[]> {
+  if (items.length === 0) return [];
   const now = c.now();
-  const [row] = await c.db
-    .insert(concepts)
-    .values({
-      userId: c.auth.userId,
-      learningSourceId: item.learningSourceId,
-      name: item.name,
-      normalizedName,
-      description: item.description,
-      notes: item.notes,
-      capturedAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({ target: [concepts.userId, concepts.normalizedName] })
-    .returning({ id: concepts.id });
-
-  if (!row) {
-    const [existing] = await c.db
-      .select({ id: concepts.id })
-      .from(concepts)
-      .where(and(eq(concepts.normalizedName, normalizedName), ownedBy(concepts.userId, c.auth)));
-    return { created: false, existingConceptId: requireRow(existing, "Concept").id };
-  }
-
-  await c.db
-    .insert(conceptProgress)
-    .values({ conceptId: row.id, userId: c.auth.userId, stage: item.stage, updatedAt: now });
-  if (item.skillIds.length > 0) {
-    await c.db
-      .insert(conceptSkills)
-      .values(item.skillIds.map((skillId) => ({ conceptId: row.id, skillId })));
-  }
-  await emit(c, "concept_captured", {
-    entityType: "concept",
-    entityId: row.id,
-    metadata: { via, edited_before_confirm: editedBeforeConfirm },
+  const normalized = items.map((item) => normalizeConceptName(item.name));
+  const firstOfName = new Map<string, number>();
+  normalized.forEach((name, index) => {
+    if (!firstOfName.has(name)) firstOfName.set(name, index);
   });
-  return { created: true, id: row.id };
+  const candidates = [...firstOfName.values()];
+
+  const inserted = await c.db
+    .insert(concepts)
+    .values(
+      candidates.map((index) => ({
+        userId: c.auth.userId,
+        learningSourceId: items[index].learningSourceId,
+        name: items[index].name,
+        normalizedName: normalized[index],
+        description: items[index].description,
+        notes: items[index].notes,
+        capturedAt: now,
+        updatedAt: now,
+      })),
+    )
+    .onConflictDoNothing({ target: [concepts.userId, concepts.normalizedName] })
+    .returning({ id: concepts.id, normalizedName: concepts.normalizedName });
+  const createdIdByName = new Map(inserted.map((row) => [row.normalizedName, row.id]));
+
+  // Names that were already taken: one query for all of them.
+  const taken = [...firstOfName.keys()].filter((name) => !createdIdByName.has(name));
+  const existingIdByName = new Map<string, string>();
+  if (taken.length > 0) {
+    const rows = await c.db
+      .select({ id: concepts.id, normalizedName: concepts.normalizedName })
+      .from(concepts)
+      .where(and(inArray(concepts.normalizedName, taken), ownedBy(concepts.userId, c.auth)));
+    for (const row of rows) existingIdByName.set(row.normalizedName, row.id);
+  }
+
+  const created = candidates.filter((index) => createdIdByName.has(normalized[index]));
+  if (created.length > 0) {
+    await c.db.insert(conceptProgress).values(
+      created.map((index) => ({
+        conceptId: createdIdByName.get(normalized[index])!,
+        userId: c.auth.userId,
+        stage: items[index].stage,
+        updatedAt: now,
+      })),
+    );
+    const links = created.flatMap((index) =>
+      items[index].skillIds.map((skillId) => ({
+        conceptId: createdIdByName.get(normalized[index])!,
+        skillId,
+      })),
+    );
+    if (links.length > 0) await c.db.insert(conceptSkills).values(links);
+    await emitMany(
+      c,
+      "concept_captured",
+      created.map((index) => ({
+        entityType: "concept",
+        entityId: createdIdByName.get(normalized[index])!,
+        metadata: { via, edited_before_confirm: editedBeforeConfirm },
+      })),
+    );
+  }
+
+  return items.map((_, index): Inserted => {
+    const name = normalized[index];
+    const createdId = createdIdByName.get(name);
+    if (createdId !== undefined && firstOfName.get(name) === index) {
+      return { created: true, id: createdId };
+    }
+    // Taken before, or created a moment ago by an earlier item of this same batch.
+    const existingId = createdId ?? existingIdByName.get(name);
+    return { created: false, existingConceptId: requireRow(existingId, "Concept") };
+  });
 }
 
 /**
@@ -320,7 +362,7 @@ export async function createConcept(c: AppContext, raw: CreateConceptInput): Pro
     await assertSourcesOwned(tx, [item.learningSourceId]);
     await assertSkillsAccessible(tx, item.skillIds);
 
-    const result = await insertConcept(tx, item, "MANUAL", false);
+    const [result] = await insertConcepts(tx, [item], "MANUAL", false);
     if (!result.created) throw duplicateError(item.name, result.existingConceptId);
     const [concept] = await loadConcepts(tx, [result.id]);
     return concept;
@@ -350,13 +392,17 @@ export async function createConceptsBulk(
       input.items.flatMap((item) => item.skillIds),
     );
 
+    const results = await insertConcepts(tx, input.items, input.via, input.editedBeforeConfirm);
     const createdIds: string[] = [];
     const skipped: { name: string; existingConceptId: string }[] = [];
-    for (const item of input.items) {
-      const result = await insertConcept(tx, item, input.via, input.editedBeforeConfirm);
+    results.forEach((result, index) => {
       if (result.created) createdIds.push(result.id);
-      else skipped.push({ name: item.name, existingConceptId: result.existingConceptId });
-    }
+      else
+        skipped.push({
+          name: input.items[index].name,
+          existingConceptId: result.existingConceptId,
+        });
+    });
     return { created: await loadConcepts(tx, createdIds), skipped };
   });
 }

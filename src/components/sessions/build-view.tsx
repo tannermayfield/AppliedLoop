@@ -3,6 +3,7 @@ import { ArrowRight, Undo2 } from "lucide-react";
 import { ContextPackCard } from "@/components/extraction/build/context-pack-card";
 import { FinishForm } from "@/components/extraction/build/finish-form";
 import { NotesEditor } from "@/components/extraction/build/notes-editor";
+import { NotesSaverProvider } from "@/components/extraction/build/notes-saver-context";
 import { RetryExtraction } from "@/components/extraction/retry-extraction";
 import { ModeBadge } from "@/components/mode-badge";
 import { Button } from "@/components/ui/button";
@@ -92,13 +93,17 @@ async function ActiveBuild({ c, session }: { c: Ctx; session: SessionDetailDto }
         included={codex.included}
         packs={{ CODEX: codex.markdown, CLAUDE_CODE: claude.markdown }}
       />
-      <div className="space-y-6">
-        <NotesEditor sessionId={session.id} initial={session.notes} />
-        <FinishForm sessionId={session.id} />
-        <div>
-          <SetAsideSessionButton sessionId={session.id} copy={setAsideCopy} />
+      {/* One notes saver for the editor and the finish form: Finish & Extract saves the notes
+          first, so text typed a moment before it is never lost (audit F-17). */}
+      <NotesSaverProvider sessionId={session.id} initial={session.notes}>
+        <div className="space-y-6">
+          <NotesEditor initial={session.notes} />
+          <FinishForm sessionId={session.id} />
+          <div>
+            <SetAsideSessionButton sessionId={session.id} copy={setAsideCopy} />
+          </div>
         </div>
-      </div>
+      </NotesSaverProvider>
     </div>
   );
 }

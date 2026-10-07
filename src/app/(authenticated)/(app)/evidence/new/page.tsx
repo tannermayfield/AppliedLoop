@@ -48,7 +48,9 @@ export default async function NewEvidencePage({
     explanation: "",
     artifactType: "PR",
     artifactUrl: "",
-    contributionType: "MIXED_UNSURE",
+    // Never pre-selected, from a session or otherwise: how the work was made is the student's
+    // own honest answer, and Save stays off until they give it.
+    contributionType: null,
     conceptIds: [],
     skillIds: [],
   };
@@ -63,7 +65,6 @@ export default async function NewEvidencePage({
         title: prefill.title,
         description: prefill.description,
         explanation: prefill.explanation,
-        contributionType: prefill.contributionType,
         conceptIds: prefill.conceptIds,
         skillIds: prefill.skillIds,
       });

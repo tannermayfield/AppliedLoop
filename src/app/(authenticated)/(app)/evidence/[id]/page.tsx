@@ -23,7 +23,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="space-y-1">
       <dt className="text-muted-foreground text-xs font-medium">{label}</dt>
-      <dd className="text-sm text-pretty">{children}</dd>
+      <dd className="text-sm text-pretty break-words">{children}</dd>
     </div>
   );
 }
@@ -60,7 +60,8 @@ export default async function EvidenceDetailPage({ params }: { params: Promise<{
         }
       />
 
-      <dl className="bg-card grid max-w-2xl gap-5 rounded-2xl border p-4 sm:p-6">
+      {/* `grid-cols-1` (= `minmax(0, 1fr)`) keeps a long pasted link from widening the page. */}
+      <dl className="bg-card grid max-w-2xl grid-cols-1 gap-5 rounded-2xl border p-4 sm:p-6">
         <Field label={copy.explanation}>
           {evidence.explanation.trim() ? (
             <span className="whitespace-pre-wrap">{evidence.explanation}</span>

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { AppContext } from "@/lib/context";
 import {
   conceptProgress,
@@ -11,7 +11,6 @@ import {
   projects,
   sessions,
   skills,
-  CONCEPT_STAGES,
   type ConceptStage,
   type OpportunityDifficulty,
   type OpportunityStatus,
@@ -223,7 +222,14 @@ export interface ConceptChoice {
   sourceTitle: string | null;
 }
 
-/** The caller's concepts: those below APPLIED first, newest first within each group. */
+/** The most concepts the picker offers (the same ceiling the Learn page uses). */
+export const MAX_CONCEPT_CHOICES = 500;
+
+/**
+ * The caller's concepts: those below APPLIED first, newest first within each group, at most
+ * MAX_CONCEPT_CHOICES. The ordering is done in SQL so the cap never cuts off a concept that is
+ * still waiting to be applied in favour of a newer one that already was.
+ */
 export async function listConceptChoices(c: AppContext): Promise<ConceptChoice[]> {
   const rows = await c.db
     .select({
@@ -246,17 +252,19 @@ export async function listConceptChoices(c: AppContext): Promise<ConceptChoice[]
       ),
     )
     .where(ownedBy(concepts.userId, c.auth))
-    .orderBy(desc(concepts.capturedAt));
-  const applied = CONCEPT_STAGES.indexOf("APPLIED");
-  const choices = rows.map((row) => ({
+    .orderBy(
+      // false (still below APPLIED, a missing progress row counting as EXPOSED) sorts first.
+      sql`coalesce(${conceptProgress.stage}, 'EXPOSED') >= 'APPLIED'`,
+      desc(concepts.capturedAt),
+      asc(concepts.id),
+    )
+    .limit(MAX_CONCEPT_CHOICES);
+  return rows.map((row) => ({
     id: row.id,
     name: row.name,
     stage: row.stage ?? ("EXPOSED" as const),
     sourceTitle: row.sourceTitle,
   }));
-  const below = choices.filter((choice) => CONCEPT_STAGES.indexOf(choice.stage) < applied);
-  const rest = choices.filter((choice) => CONCEPT_STAGES.indexOf(choice.stage) >= applied);
-  return [...below, ...rest];
 }
 
 export interface ProjectChoice {

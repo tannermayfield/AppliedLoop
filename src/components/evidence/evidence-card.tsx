@@ -26,9 +26,9 @@ export function ArtifactRef({
         href={href}
         target="_blank"
         rel="noreferrer noopener"
-        className="inline-flex max-w-full items-center gap-1 underline underline-offset-4"
+        className="inline-flex max-w-full min-w-0 items-center gap-1 underline underline-offset-4"
       >
-        <span className="truncate">
+        <span className="min-w-0 truncate">
           {ARTIFACT_LABELS[type]}: {value}
         </span>
         <ExternalLink className="size-3.5 shrink-0" aria-hidden />
@@ -45,10 +45,10 @@ export function ArtifactRef({
 
 export function EvidenceCard({ item, timeZone }: { item: EvidenceDto; timeZone: string }) {
   return (
-    <li className="bg-card space-y-3 rounded-2xl border p-4">
+    <li className="bg-card min-w-0 space-y-3 rounded-2xl border p-4">
       <div className="space-y-1">
-        <h3 className="font-medium text-pretty">{item.title}</h3>
-        <p className="text-muted-foreground text-sm">
+        <h3 className="font-medium text-pretty break-words">{item.title}</h3>
+        <p className="text-muted-foreground text-sm break-words">
           {copy.inProject(item.projectName)} · {formatDate(item.createdAt, { timeZone })}
           {item.concepts.length > 0 && ` · ${item.concepts.map((c) => c.name).join(", ")}`}
         </p>
@@ -61,7 +61,7 @@ export function EvidenceCard({ item, timeZone }: { item: EvidenceDto; timeZone: 
       <div className="space-y-0.5 text-sm">
         <p className="text-muted-foreground text-xs font-medium">{copy.explanationLabel}</p>
         {item.explanation.trim() ? (
-          <p className="text-pretty">{excerpt(item.explanation)}</p>
+          <p className="text-pretty break-words">{excerpt(item.explanation)}</p>
         ) : (
           <p className="text-muted-foreground">{copy.noExplanation}</p>
         )}

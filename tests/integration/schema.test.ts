@@ -1,4 +1,4 @@
-import { eq, count } from "drizzle-orm";
+import { eq, count, sql as sqlText } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   aiRuns,
@@ -192,7 +192,9 @@ describe("schema constraints", () => {
       ).resolves.toBeDefined();
       // One row per student and installation: reconnecting reuses the old row.
       expect(
-        await codeOf(insertIntegration(app.db, alice.id, { installationId: 1, status: "DISCONNECTED" })),
+        await codeOf(
+          insertIntegration(app.db, alice.id, { installationId: 1, status: "DISCONNECTED" }),
+        ),
       ).toBe(PG_UNIQUE_VIOLATION);
     });
 
@@ -221,9 +223,9 @@ describe("schema constraints", () => {
     it("mirrors a repository once per connection and an artifact once per repository and type", async () => {
       const alice = await app.makeUser();
       const { integration, repository } = await insertLinkedProject(app.db, alice.id);
-      expect(
-        await codeOf(insertGitHubRepository(app.db, alice.id, integration.id)),
-      ).toBe(PG_UNIQUE_VIOLATION);
+      expect(await codeOf(insertGitHubRepository(app.db, alice.id, integration.id))).toBe(
+        PG_UNIQUE_VIOLATION,
+      );
       await insertGitHubArtifact(app.db, alice.id, repository.id);
       expect(await codeOf(insertGitHubArtifact(app.db, alice.id, repository.id))).toBe(
         PG_UNIQUE_VIOLATION,
@@ -297,14 +299,12 @@ describe("schema constraints", () => {
         normalizedName: "transactions",
       })
       .returning();
-    await app.db
-      .insert(learningDebtItems)
-      .values({
-        userId: alice.id,
-        conceptId: concept.id,
-        projectId: project.id,
-        extractionItemId: item.id,
-      });
+    await app.db.insert(learningDebtItems).values({
+      userId: alice.id,
+      conceptId: concept.id,
+      projectId: project.id,
+      extractionItemId: item.id,
+    });
     const integration = await insertIntegration(app.db, alice.id);
     const repository = await insertGitHubRepository(app.db, alice.id, integration.id);
     await linkProjectRepository(app.db, project.id, repository);
@@ -382,5 +382,54 @@ describe("schema constraints", () => {
     // Another user's data is untouched.
     const [stillThere] = await app.db.select().from(concepts).where(eq(concepts.id, bobConcept.id));
     expect(stillThere).toBeDefined();
+  });
+
+  describe("indexes", () => {
+    // A foreign key without an index on its (leading) columns makes every cascade, SET NULL and
+    // "which rows point at this one" lookup scan the whole child table: deleting a session, a
+    // concept or an account, and the KPI joins. Postgres does not create these for us.
+    it("serves every foreign key with an index that starts with its columns", async () => {
+      type Fk = { table: string; name: string; columns: string; firstColumn: string };
+      type Index = { table: string; columns: string; predicate: string | null };
+      const foreignKeys = (
+        (await app.db.execute(sqlText`
+          SELECT con.conrelid::regclass::text AS "table", con.conname AS name,
+                 array_to_string(con.conkey, ' ') AS columns,
+                 (SELECT a.attname FROM pg_attribute a
+                   WHERE a.attrelid = con.conrelid AND a.attnum = con.conkey[1]) AS "firstColumn"
+          FROM pg_constraint con
+          WHERE con.contype = 'f' AND con.connamespace = 'public'::regnamespace
+          ORDER BY 1, 2`)) as unknown as { rows: Fk[] }
+      ).rows;
+      const indexes = (
+        (await app.db.execute(sqlText`
+          SELECT i.indrelid::regclass::text AS "table", i.indkey::text AS columns,
+                 pg_get_expr(i.indpred, i.indrelid) AS predicate
+          FROM pg_index i
+          JOIN pg_class c ON c.oid = i.indrelid
+          WHERE c.relnamespace = 'public'::regnamespace AND i.indexprs IS NULL`)) as unknown as {
+          rows: Index[];
+        }
+      ).rows;
+
+      expect(
+        foreignKeys.length,
+        "found no foreign keys: the catalog query is broken",
+      ).toBeGreaterThan(40);
+      const uncovered = foreignKeys
+        .filter(
+          (fk) =>
+            !indexes.some(
+              (index) =>
+                index.table === fk.table &&
+                `${index.columns} `.startsWith(`${fk.columns} `) &&
+                // A partial index serves a plain lookup only when it keeps every non-null value:
+                // `col = $1` implies `col IS NOT NULL`, so the planner can use it.
+                (index.predicate === null || index.predicate === `(${fk.firstColumn} IS NOT NULL)`),
+            ),
+        )
+        .map((fk) => `${fk.table} (${fk.name})`);
+      expect(uncovered, "foreign keys with no index starting with their columns").toEqual([]);
+    });
   });
 });

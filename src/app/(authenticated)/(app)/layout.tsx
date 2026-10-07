@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getMe } from "@/domain/identity/me";
 import { AppShell } from "@/components/shell/app-shell";
+import { TimeZoneSync } from "@/components/shell/time-zone-sync";
 import { getPageContext } from "@/lib/app-context";
 import { getEnv } from "@/lib/env";
 
@@ -13,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell user={{ name: me.name, email: me.email }} demoAi={getEnv().aiMode === "demo"}>
+      <TimeZoneSync timezone={me.profile.timezone} timezoneChosen={me.profile.timezoneChosen} />
       {children}
     </AppShell>
   );

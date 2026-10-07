@@ -20,7 +20,9 @@ export function EvidenceList({ items, timeZone }: { items: EvidenceDto[]; timeZo
           >
             {group.skillName ?? evidenceCopy.list.ungrouped}
           </h2>
-          <ul className="grid gap-3 md:grid-cols-2">
+          {/* `grid-cols-1` is `minmax(0, 1fr)`: without it the implicit column grows to the widest
+              unbroken text (a long pasted link), and the whole page scrolls sideways on a phone. */}
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {group.items.map((item) => (
               <EvidenceCard key={item.id} item={item} timeZone={timeZone} />
             ))}

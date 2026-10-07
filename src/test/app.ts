@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Logger } from "drizzle-orm";
 import type { AppContext } from "../lib/context";
 import type { Db } from "../lib/db/types";
 import { seedSharedSkills } from "../lib/db/seed-skills";
@@ -23,6 +24,12 @@ export interface TestClock {
 
 export interface TestApp {
   db: Db;
+  /**
+   * Run `fn` and return the SQL statements it sent to the database, in order. Transaction BEGIN,
+   * COMMIT and ROLLBACK are left out (only some drivers report them); savepoints are included. Used
+   * by the statement-budget test (tests/integration/performance).
+   */
+  recordStatements<T>(fn: () => Promise<T>): Promise<{ result: T; statements: string[] }>;
   ai: ScriptedAiProvider;
   /** The GitHub double every user's ctx shares (P1). */
   github: FakeGitHubClient;
@@ -46,7 +53,13 @@ export interface TestApp {
  *   await createProject(alice.ctx, { name: "Adaptive Language" });
  */
 export async function createTestApp(): Promise<TestApp> {
-  const testDb: TestDb = await createTestDb();
+  let recording: string[] | null = null;
+  const logger: Logger = {
+    logQuery(query) {
+      recording?.push(query);
+    },
+  };
+  const testDb: TestDb = await createTestDb({ logger });
   const ai = new ScriptedAiProvider();
   const github = new FakeGitHubClient();
   let current = new Date("2026-10-06T15:00:00.000Z");
@@ -63,6 +76,19 @@ export async function createTestApp(): Promise<TestApp> {
 
   return {
     db: testDb.db,
+    async recordStatements(fn) {
+      const statements: string[] = [];
+      recording = statements;
+      try {
+        const result = await fn();
+        return {
+          result,
+          statements: statements.filter((query) => !/^\s*(begin|commit|rollback)\b/i.test(query)),
+        };
+      } finally {
+        recording = null;
+      }
+    },
     ai,
     github,
     clock,

@@ -279,6 +279,7 @@ The endpoints and payload details below exist in the code and are covered by rou
 | `POST /concepts/capture` | Candidates also carry `existingConceptId: string \| null`. Saves nothing. |
 | `DELETE /projects/:id/skills/:skillId` · `GET /projects/:id/context` | Remove a skill link; latest context snapshot or `null`. `POST /projects/:id/skills` accepts `{ skills: [{ skillId, relationshipType? }] }` or `{ skillIds, relationshipType? }`. |
 | `POST /onboarding` | 201 the first time, 200 `{ alreadyCompleted: true }` afterwards. |
+| `GET /me` · `PATCH /me/profile` | `PATCH` body `{ displayName?, program?, cohort?, timezone?, detectedTimezone? }` → the updated `GET /me` object, whose `profile` also carries `timezoneChosen` (v1, 2026-10-07). **`timezone`** is the student's own choice (an IANA name): always applied, and from then on `timezoneChosen` is `true`. **`detectedTimezone`** is the browser's zone, sent once by the app on the first authenticated page (onboarding for a new student): it is adopted only while the profile still has the default `UTC` **and** `timezoneChosen` is `false`; otherwise it is ignored with `200`. A UTC (or alias) browser changes nothing, an unrecognized name is `400 VALIDATION_ERROR`, it never sets `timezoneChosen`, and it loses to a `timezone` sent in the same request. Saving only a name does not count as choosing a zone. |
 
 Duplicate concept or rename clash → `details: { existingConceptId }`; duplicate skill → `details: { existingSkillId }`.
 
@@ -287,7 +288,7 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 | Endpoint | Notes |
 |---|---|
 | `GET /sessions` | Filters `projectId`, `type`, `status`, `limit`, `cursor`; newest first; items include `projectName`, `conceptName`. |
-| `GET /sessions/:id` | Adds `project`, `concept`, `opportunity`, `messages`, `switchedToSessionId`. |
+| `GET /sessions/:id` | Adds `project`, `concept`, `opportunity`, `messages`, `switchedToSessionId`. `messages` are the newest 500, oldest first (older ones stay stored). |
 | `POST /sessions/:id/messages` | Body `{ message }` (max 20,000 chars) → `{ userMessage, reply, hintLevel, fallback }`. APPLY sessions only (409 otherwise). Model `observations` are never exposed. |
 | `POST /sessions/:id/hints` · `/switch-to-build` · `/abandon` · `PATCH /sessions/:id/notes` · `DELETE /sessions/:id` | Hint ladder (+1, max 3), explicit mode switch (returns the new BUILD session, 201), discard, notes autosave, hard delete. |
 | `POST /apply/opportunities` | 201; returns `{ opportunities[], noGoodFitReason }`. |
@@ -299,7 +300,7 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 | Endpoint | Notes |
 |---|---|
 | `POST /sessions/:id/context-pack` | Replaces `POST /build/:sessionId/context-pack` (R-15). Body `{ target?: CODEX \| CLAUDE_CODE \| GENERIC }`. |
-| `POST /extractions` | 201 when new, 200 when it already existed (idempotent; completes an ACTIVE build session first). Items carry `evidenceRefs[]`, `selfAssessmentQuestion`, `existingConceptId` (R-04). |
+| `POST /extractions` | 201 when new, 200 when it already existed (idempotent; completes an ACTIVE build session first). Items carry `evidenceRefs[]`, `selfAssessmentQuestion`, `existingConceptId` (R-04): the concept the student already had when the extraction was made, or `null`; a concept created later by classifying an item never sets it ("In your library" means it existed before the review). |
 | `GET /extractions/:id` · `GET /sessions/:id/extraction` | The latter returns `null` when none exists. |
 | `PATCH /extractions/:id/items/:itemId` | Returns `{ item, debt }`. |
 | `GET /learning-debt` | With no `status`, the active queue (OPEN and PLANNED). |
@@ -308,9 +309,9 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 
 | Endpoint | Notes |
 |---|---|
-| `GET /evidence/prefill?sessionId=` | Prefill from a COMPLETED APPLY session (409 otherwise) or any BUILD session; includes `description`. |
+| `GET /evidence/prefill?sessionId=` | Prefill from a COMPLETED APPLY session (409 otherwise) or any BUILD session; includes `description`. `contributionType` is always `null`: how the work was made is the student's own answer, never guessed from the session type, and the form starts with nothing selected. |
 | `POST /evidence` | 201 `{ evidence, suggestedAdvances[] }`. Contribution type is required and never inferred. Artifact rules: `PR`/`URL` need an http(s) URL, `COMMIT`/`FILE` free text, `NOTE` no link. Filters on `GET /evidence`: `skillId`, `projectId`, `conceptId`, `search`, `limit`, `cursor`. |
-| `GET /today` | `{ greetingName, timezone, cards[], needsReview { count, top[] }, hasSource, hasProject, hasConcepts }`. Emits `today_viewed`. |
+| `GET /today` | `{ greetingName, timezone, cards[], needsReview { count, top[] }, hasSource, hasProject, hasConcepts }`. Emits `today_viewed`. Reads at most 200 open Needs Review items (pinned, then priority, then longest waiting); `needsReview.count` is still the exact number of open items. |
 | `POST /events` | 202 `{ data: { accepted: true } }`; body `{ name, entityType?, entityId?, metadata? (under 2 KB) }`; `name` must be a client event. |
 
 KPI SQL lives in `scripts/kpi/` (see its README); the page `/evidence/[id]/edit` reuses the evidence form.
@@ -327,7 +328,7 @@ Downloads everything the caller owns as one JSON file. `200` with `Content-Type:
   "exportVersion": 1,
   "exportedAt": "2026-10-06T15:00:00.000Z",
   "account": { "id": "uuid", "name": "…", "email": "…", "emailVerified": false, "image": null, "role": "STUDENT", "createdAt": "…", "updatedAt": "…" },
-  "profile": { "program": null, "cohort": null, "timezone": "UTC", "onboardingCompleted": true, "preferencesJson": {} },
+  "profile": { "program": null, "cohort": null, "timezone": "UTC", "timezoneChosen": false, "onboardingCompleted": true, "preferencesJson": {} },
   "learningSources": [], "skills": [], "concepts": [], "conceptProgress": [], "progressEvents": [],
   "projects": [], "projectContextSnapshots": [], "practiceOpportunities": [],
   "sessions": [], "sessionMessages": [], "extractions": [], "extractionItems": [],

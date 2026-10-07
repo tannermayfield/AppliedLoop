@@ -54,7 +54,7 @@ export function ItemCard({
             {item.name}
           </h3>
           <Badge variant="secondary">{item.category}</Badge>
-          {item.existingConceptId && <Badge variant="outline">{t.alreadyInLibrary}</Badge>}
+          {item.existingConceptId && <Badge variant="outline">{t.inLibrary}</Badge>}
         </div>
         {item.reason && <p className="text-sm">{t.introducedBecause(item.reason)}</p>}
         {item.confidence !== null && (

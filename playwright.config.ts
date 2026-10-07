@@ -19,6 +19,10 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The app adopts the browser's time zone for a student who never chose one (audit F-09). Pin it
+    // so every spec behaves the same on a laptop in Mountain time and on a UTC runner; a spec that is
+    // about time zones sets its own with `test.use({ timezoneId })`.
+    timezoneId: "UTC",
   },
   projects: [
     {

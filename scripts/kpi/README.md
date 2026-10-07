@@ -41,4 +41,9 @@ change both when the definition changes.
 ## Tests
 
 `tests/integration/kpi/` seeds a small deterministic scenario with raw inserts into an in-memory
-database and asserts the exact numbers each query returns.
+database and asserts the exact numbers each query returns. `golden-path-events.test.ts` is the other
+half (AT-23): one student walks the whole golden path through the real domain functions (onboarding,
+capture, an Apply session with an attempt, evidence, a Build session, extraction, classification)
+with the demo AI, then the activation funnel, build-to-extract and north-star queries run over what
+that left in `event_log` and the product tables. It also checks that every event name the SQL files
+mention is really emitted, so renaming an event breaks a test instead of silently emptying a KPI.

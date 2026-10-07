@@ -73,6 +73,27 @@ describe("/api/v1/evidence", () => {
     expect(res.body.error.details.issues[0].path).toBe("artifactUrl");
   });
 
+  it("answers 400 VALIDATION_ERROR when the contribution type is missing (required, never inferred)", async () => {
+    const alice = await app.makeUser();
+    setRouteContext(alice.ctx);
+    const project = await insertProject(app.db, alice.id);
+    const res = await callRoute(POST, {
+      url: "/api/v1/evidence",
+      body: {
+        projectId: project.id,
+        title: "CTE refactor",
+        artifactType: "PR",
+        artifactUrl: "https://github.com/example/app/pull/1",
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.details.issues.map((issue: { path: string }) => issue.path)).toContain(
+      "contributionType",
+    );
+    expect((await callRoute(GET, { url: "/api/v1/evidence" })).body.data).toHaveLength(0);
+  });
+
   it("gets, patches and deletes owned evidence and 404s for someone else", async () => {
     const [alice, bob] = [await app.makeUser(), await app.makeUser()];
     const project = await insertProject(app.db, alice.id);
@@ -111,6 +132,8 @@ describe("/api/v1/evidence", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.data.projectId).toBe(project.id);
+    // Never inferred (docs/API.md): the prefill leaves the contribution type for the student.
+    expect(res.body.data).toHaveProperty("contributionType", null);
 
     const bad = await callRoute(GET_PREFILL, { url: "/api/v1/evidence/prefill" });
     expect(bad.status).toBe(400);

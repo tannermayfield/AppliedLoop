@@ -2,11 +2,15 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "@/lib/context";
 import { conceptSkills, concepts, projects, sessions } from "@/lib/db/schema";
-import type { ContributionType } from "@/lib/db/schema/enums";
 import { ConflictError, parseOrThrow } from "@/lib/errors";
 import { ownedBy, requireRow } from "@/lib/ownership";
 
 // Starting values for the evidence form, taken from one of the student's own sessions.
+//
+// The contribution classification (Student-led / AI-assisted / ...) is NEVER inferred: it is the
+// student's own honest statement about how the work was made (docs/API.md: "required and never
+// inferred"). A completed Apply session does not mean the work was student-led, and a Build
+// session does not mean it was AI-written, so the prefill always leaves it for the student.
 
 const MAX_TITLE = 140;
 
@@ -21,7 +25,8 @@ export interface EvidencePrefill {
   explanation: string;
   conceptIds: string[];
   skillIds: string[];
-  contributionType: ContributionType;
+  /** Always `null`: the student chooses how the work was made. Never defaulted or guessed. */
+  contributionType: null;
 }
 
 /** Starting values for the evidence form from a session. The student edits everything. */
@@ -51,7 +56,7 @@ export async function getEvidencePrefill(
       explanation: "",
       conceptIds: [],
       skillIds: [],
-      contributionType: "MIXED_UNSURE",
+      contributionType: null,
     };
   }
 
@@ -84,6 +89,6 @@ export async function getEvidencePrefill(
     explanation: session.reflectionJson?.explanation?.trim() || session.summary,
     conceptIds: conceptName && session.conceptId ? [session.conceptId] : [],
     skillIds,
-    contributionType: "STUDENT_LED",
+    contributionType: null,
   };
 }

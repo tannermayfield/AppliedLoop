@@ -17,7 +17,11 @@ export interface ExtractionItemDto {
   /** Student-written only. Null until they answer. */
   userUnderstanding: UserUnderstanding | null;
   disposition: ExtractionDisposition;
-  /** The student's concept with the same normalized name, if they have one. */
+  /**
+   * The student's concept with the same normalized name WHEN THE EXTRACTION WAS MADE, or null. A
+   * concept the student creates by classifying an item here never shows up in it (journeys audit
+   * F-18): it is what "In your library" means.
+   */
   existingConceptId: string | null;
 }
 

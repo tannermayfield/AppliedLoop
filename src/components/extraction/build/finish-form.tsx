@@ -11,15 +11,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { inferArtifactType } from "@/lib/artifact-ref";
 import { BUILD_COPY, BUILD_LIMITS } from "@/lib/copy-build";
 import { ARTIFACT_TYPES, type ArtifactType } from "@/lib/db/schema/enums";
+import { useNotesSaver } from "./notes-saver-context";
 
 const t = BUILD_COPY.session;
 
 interface Row {
   key: number;
-  type: ArtifactType;
+  /** "AUTO" until the student picks a type: then it follows what they paste. */
+  type: ArtifactType | "AUTO";
   value: string;
+}
+
+/** The type that is sent: the student's pick, else what the value looks like, else a plain note. */
+function effectiveType(row: Row): ArtifactType {
+  return row.type === "AUTO" ? (inferArtifactType(row.value) ?? "NOTE") : row.type;
+}
+
+/** The label of the automatic choice: says what it would pick for what is pasted so far. */
+function autoLabel(value: string): string {
+  const guess = inferArtifactType(value);
+  return guess ? t.artifactAutoDetected(t.artifactTypes[guess]) : t.artifactAuto;
 }
 
 /**
@@ -30,6 +44,7 @@ interface Row {
 export function FinishForm({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const id = useId();
+  const notes = useNotesSaver();
   const [summary, setSummary] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [nextKey, setNextKey] = useState(1);
@@ -38,7 +53,7 @@ export function FinishForm({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   function addRow() {
-    setRows((current) => [...current, { key: nextKey, type: "COMMIT", value: "" }]);
+    setRows((current) => [...current, { key: nextKey, type: "AUTO", value: "" }]);
     setNextKey((key) => key + 1);
   }
   function updateRow(key: number, patch: Partial<Row>) {
@@ -49,13 +64,20 @@ export function FinishForm({ sessionId }: { sessionId: string }) {
     event?.preventDefault();
     setPending(true);
     setError(null);
+    // Notes typed a moment ago may still be waiting for their autosave, and a save that lands after
+    // the session is completed is refused. Save them first and finish only once they are safe.
+    if (notes && !(await notes.flush())) {
+      setPending(false);
+      setError(t.notesNotSaved);
+      return;
+    }
     const result = await api<{ id: string }>("/api/v1/extractions", {
       body: {
         buildSessionId: sessionId,
         summary: summary.trim(),
         artifactRefs: rows
           .filter((row) => row.value.trim())
-          .map((row) => ({ type: row.type, value: row.value.trim() })),
+          .map((row) => ({ type: effectiveType(row), value: row.value.trim() })),
       },
     });
     if (result.ok) {
@@ -104,10 +126,11 @@ export function FinishForm({ sessionId }: { sessionId: string }) {
                 id={`${id}-type-${row.key}`}
                 value={row.type}
                 onChange={(event) =>
-                  updateRow(row.key, { type: event.target.value as ArtifactType })
+                  updateRow(row.key, { type: event.target.value as ArtifactType | "AUTO" })
                 }
                 className="h-9 sm:w-40"
               >
+                <option value="AUTO">{autoLabel(row.value)}</option>
                 {ARTIFACT_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {t.artifactTypes[type]}
