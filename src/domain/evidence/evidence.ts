@@ -1,4 +1,16 @@
-import { and, desc, eq, exists, ilike, inArray, lt, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  ilike,
+  inArray,
+  lt,
+  ne,
+  notExists,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { inTransaction, type AppContext } from "@/lib/context";
 import {
@@ -315,7 +327,11 @@ interface ChosenArtifact {
  */
 async function chooseArtifact(
   c: AppContext,
-  input: { artifactType: ArtifactType; artifactUrl: string | null; githubArtifactId?: string | null },
+  input: {
+    artifactType: ArtifactType;
+    artifactUrl: string | null;
+    githubArtifactId?: string | null;
+  },
   projectId: string,
 ): Promise<ChosenArtifact> {
   if (input.githubArtifactId) {
@@ -530,7 +546,11 @@ export async function updateEvidence(
   let githubArtifactId = current.githubArtifactId;
   let attached: GitHubArtifactType | null = null;
   if (input.githubArtifactId) {
-    const picked = await chooseArtifact(c, { ...current, githubArtifactId: input.githubArtifactId }, current.projectId);
+    const picked = await chooseArtifact(
+      c,
+      { ...current, githubArtifactId: input.githubArtifactId },
+      current.projectId,
+    );
     ({ artifactType: type, artifactUrl: url, githubArtifactId } = picked);
     touchesArtifact = true;
     if (githubArtifactId !== current.githubArtifactId) attached = picked.githubType;
@@ -540,7 +560,8 @@ export async function updateEvidence(
       if (problem) throwArtifactProblem(problem);
     }
     // A link edited by hand no longer describes the picked GitHub item: it is a pasted link now.
-    const edited = touchesArtifact && (type !== current.artifactType || url !== current.artifactUrl);
+    const edited =
+      touchesArtifact && (type !== current.artifactType || url !== current.artifactUrl);
     if (input.githubArtifactId === null || edited) githubArtifactId = null;
   }
 
@@ -584,6 +605,36 @@ export async function updateEvidence(
 }
 
 /** Removes the evidence and its links only. Concepts, skills and stages are never touched. */
+/**
+ * Names of the caller's Demonstrated concepts for which this item is the only evidence. Deleting
+ * the item would leave them Demonstrated with nothing behind it (stages are only ever changed by
+ * the student), so the delete dialog says so first (journeys audit F-24).
+ */
+export async function conceptsLeftWithoutEvidence(c: AppContext, id: string): Promise<string[]> {
+  const row = await loadOwnedRow(c, id);
+  const others = c.db
+    .select({ one: evidenceConcepts.evidenceId })
+    .from(evidenceConcepts)
+    .where(
+      and(eq(evidenceConcepts.conceptId, concepts.id), ne(evidenceConcepts.evidenceId, row.id)),
+    );
+  const rows = await c.db
+    .select({ name: concepts.name })
+    .from(evidenceConcepts)
+    .innerJoin(concepts, eq(concepts.id, evidenceConcepts.conceptId))
+    .innerJoin(conceptProgress, eq(conceptProgress.conceptId, concepts.id))
+    .where(
+      and(
+        eq(evidenceConcepts.evidenceId, row.id),
+        ownedBy(concepts.userId, c.auth),
+        eq(conceptProgress.stage, "DEMONSTRATED"),
+        notExists(others),
+      ),
+    )
+    .orderBy(concepts.name);
+  return rows.map((r) => r.name);
+}
+
 export async function deleteEvidence(c: AppContext, id: string): Promise<void> {
   const row = await loadOwnedRow(c, id);
   await c.db

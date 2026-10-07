@@ -8,7 +8,7 @@ import { orNotFound } from "@/components/learning/or-not-found";
 import { PageHeader } from "@/components/page-header";
 import { StageBadge } from "@/components/stage-badge";
 import { Button } from "@/components/ui/button";
-import { getEvidence } from "@/domain/evidence/evidence";
+import { conceptsLeftWithoutEvidence, getEvidence } from "@/domain/evidence/evidence";
 import { getMe } from "@/domain/identity/me";
 import { getPageContext } from "@/lib/app-context";
 import { CONTRIBUTION_LABELS } from "@/lib/copy";
@@ -32,6 +32,7 @@ export default async function EvidenceDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const c = await getPageContext();
   const [evidence, me] = await Promise.all([orNotFound(getEvidence(c, id)), getMe(c)]);
+  const leaves = await conceptsLeftWithoutEvidence(c, evidence.id);
   const timeZone = me.profile.timezone;
 
   return (
@@ -55,7 +56,7 @@ export default async function EvidenceDetailPage({ params }: { params: Promise<{
                 <Pencil aria-hidden /> {copy.edit}
               </Link>
             </Button>
-            <DeleteEvidenceButton evidenceId={evidence.id} />
+            <DeleteEvidenceButton evidenceId={evidence.id} leavesWithoutEvidence={leaves} />
           </>
         }
       />

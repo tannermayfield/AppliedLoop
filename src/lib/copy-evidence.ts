@@ -117,6 +117,10 @@ export const evidenceCopy = {
     deleteTitle: "Delete this evidence?",
     deleteBody:
       "The evidence and your explanation are removed. Your concepts, skills and their stages stay as they are.",
+    // Shown when the item is the only evidence of a Demonstrated concept. Stages never change on
+    // their own, so the concept stays as it is until the student moves it.
+    deleteLeaves: (names: string[]) =>
+      `This is the only evidence for ${names.join(", ")}. ${names.length === 1 ? "It stays" : "They stay"} Demonstrated until you change ${names.length === 1 ? "its" : "their"} stage.`,
     cancel: "Cancel",
     deleting: "Deleting…",
     noConcepts: "Not linked to a concept",

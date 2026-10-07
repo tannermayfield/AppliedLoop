@@ -91,7 +91,9 @@ export function ItemCard({
         <RadioGroup
           value={item.userUnderstanding ?? ""}
           onValueChange={(value) => onUnderstanding(value as UserUnderstanding)}
-          className="gap-1.5"
+          // Side by side, wrapping on a phone: six candidates stack five radios each otherwise
+          // (audit F-18d). Every option stays visible; nothing is folded away.
+          className="flex flex-wrap gap-x-5 gap-y-2"
         >
           {USER_UNDERSTANDINGS.map((value) => (
             <div key={value} className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import {
+  conceptsLeftWithoutEvidence,
   createEvidence,
   deleteEvidence,
   getEvidence,
@@ -51,6 +52,11 @@ const cases = [
       const [row] = await app.db.select().from(evidenceItems).where(eq(evidenceItems.id, id));
       if (row.title !== "Original") throw new Error("The evidence was modified by another user");
     },
+  }),
+  authzCase({
+    name: "evidence.conceptsLeftWithoutEvidence",
+    arrange: arrangeEvidence,
+    attempt: (_app, caller, id) => conceptsLeftWithoutEvidence(caller.ctx, id),
   }),
   authzCase({
     name: "evidence.deleteEvidence",

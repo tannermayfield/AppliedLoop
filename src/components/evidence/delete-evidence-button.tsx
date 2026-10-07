@@ -19,7 +19,14 @@ import { evidenceCopy } from "@/lib/copy-evidence";
 
 const copy = evidenceCopy.detail;
 
-export function DeleteEvidenceButton({ evidenceId }: { evidenceId: string }) {
+export function DeleteEvidenceButton({
+  evidenceId,
+  leavesWithoutEvidence = [],
+}: {
+  evidenceId: string;
+  /** Demonstrated concepts that would have no evidence left. */
+  leavesWithoutEvidence?: string[];
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +54,10 @@ export function DeleteEvidenceButton({ evidenceId }: { evidenceId: string }) {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{copy.deleteTitle}</AlertDialogTitle>
-          <AlertDialogDescription>{copy.deleteBody}</AlertDialogDescription>
+          <AlertDialogDescription>
+            {copy.deleteBody}
+            {leavesWithoutEvidence.length > 0 && ` ${copy.deleteLeaves(leavesWithoutEvidence)}`}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (
           <p role="alert" className="text-destructive text-sm">

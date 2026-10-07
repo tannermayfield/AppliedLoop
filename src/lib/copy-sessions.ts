@@ -61,6 +61,9 @@ export const APPLY_COPY = {
       concept ? `${concept} × ${project}` : project,
     challenge: "Challenge",
     challengeLandmark: "Practice challenge",
+    // On a phone the challenge card sits above the conversation, so its details fold away.
+    showChallengeDetails: "Show why it fits and the success criteria",
+    hideChallengeDetails: "Hide the details",
     whyFits: "Why this fits",
     successCriteria: "Success criteria",
     criteriaNote: "Ticks stay on this device.",
@@ -93,7 +96,8 @@ export const APPLY_COPY = {
     hintMessage: "Could I have a hint, please?",
     tutorOffProject: (project: string) =>
       `AI is turned off for ${project}, so the tutor is unavailable. You can still work on the challenge and finish the session.`,
-    tutorOffApp: "AI is turned off for this app, so the tutor can't reply. You can still finish the session.",
+    tutorOffApp:
+      "AI is turned off for this app, so the tutor can't reply. You can still finish the session.",
     switch: "Switch to Build Mode",
     switchTitle: "Switch to Build mode?",
     switchBody:
@@ -112,7 +116,8 @@ export const APPLY_COPY = {
       "It stays in your history but won't count as finished. You can start a new challenge any time.",
     delete: "Delete session",
     deleteTitle: "Delete this session?",
-    deleteBody: "This permanently deletes the session and its whole conversation, including pasted code.",
+    deleteBody:
+      "This permanently deletes the session and its whole conversation, including pasted code.",
     cancel: "Cancel",
     status: {
       COMPLETED: "Finished",
@@ -179,7 +184,8 @@ export const TUTOR_FALLBACK = {
         ? "If you're stuck, use **Ask for another hint** for more help. If you'd rather have AI write it, use **Switch to Build Mode** (that ends this Apply session)."
         : "You've unlocked every hint level, so I can go through the structure with you again. If you'd rather have AI write it, use **Switch to Build Mode** (that ends this Apply session).",
     ].join("\n\n"),
-  question: "What's the smallest piece of this you could try first, and what do you expect it to do?",
+  question:
+    "What's the smallest piece of this you could try first, and what do you expect it to do?",
 } as const;
 
 /** Field-level validation messages (HTTP 400). */

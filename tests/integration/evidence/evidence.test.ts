@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   createEvidence,
+  conceptsLeftWithoutEvidence,
   deleteEvidence,
   getEvidence,
   listEvidence,
@@ -374,6 +375,38 @@ describe("evidence", () => {
       expect(await app.db.select().from(skills)).toHaveLength(1);
       const [progress] = await app.db.select().from(conceptProgress);
       expect(progress.stage).toBe("DEMONSTRATED");
+    });
+  });
+
+  describe("conceptsLeftWithoutEvidence (audit F-24)", () => {
+    it("names Demonstrated concepts whose only evidence this is, and no others", async () => {
+      const alice = await app.makeUser();
+      const project = await insertProject(app.db, alice.id);
+      const only = await insertConcept(app.db, alice.id, {
+        name: "Only here",
+        stage: "DEMONSTRATED",
+      });
+      const shared = await insertConcept(app.db, alice.id, {
+        name: "Shared",
+        stage: "DEMONSTRATED",
+      });
+      const applied = await insertConcept(app.db, alice.id, { name: "Lower", stage: "APPLIED" });
+      const first = await insertEvidence(app.db, alice.id, project.id, {
+        conceptIds: [only.id, shared.id, applied.id],
+      });
+      await insertEvidence(app.db, alice.id, project.id, { conceptIds: [shared.id] });
+
+      expect(await conceptsLeftWithoutEvidence(alice.ctx, first.id)).toEqual(["Only here"]);
+    });
+
+    it("is NOT_FOUND for someone else's evidence", async () => {
+      const alice = await app.makeUser();
+      const bob = await app.makeUser();
+      const project = await insertProject(app.db, bob.id);
+      const theirs = await insertEvidence(app.db, bob.id, project.id);
+      await expect(conceptsLeftWithoutEvidence(alice.ctx, theirs.id)).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
     });
   });
 
