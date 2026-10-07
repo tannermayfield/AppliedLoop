@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildContextPack } from "@/domain/sessions/build/context-pack";
+import { BUILD_PREAMBLE_VERSION } from "@/prompts/build/preamble";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertConcept, insertProject } from "@/test/factories";
@@ -21,6 +22,19 @@ describe("buildContextPack (AT-11, AT-12)", () => {
   });
   afterAll(() => app.close());
   beforeEach(() => app.reset());
+
+  it("names the wording of its brief, in the result and on its last line", async () => {
+    const alice = await app.makeUser();
+    const { session } = await insertBuildSetup(app.db, alice.id, { context: FULL_CONTEXT });
+
+    for (const target of ["CODEX", "CLAUDE_CODE", "GENERIC"] as const) {
+      const pack = await buildContextPack(alice.ctx, session.id, { target });
+      expect(pack.briefVersion).toBe(BUILD_PREAMBLE_VERSION);
+      expect(pack.markdown.trimEnd().split("\n").at(-1)).toBe(
+        `Brief version: ${BUILD_PREAMBLE_VERSION}`,
+      );
+    }
+  });
 
   it("contains every section in order, from the latest snapshot", async () => {
     const alice = await app.makeUser();

@@ -256,7 +256,7 @@ Server-emitted unless marked *(client)*. Every event carries `user_id`, an `enti
 | `apply_session_completed` | APPLY completed | `duration_s`, `hint_level` | Apply completion, North star |
 | `concept_stage_changed` | stage confirmed | `from`, `to`, `source: USER \| APPLY_COMPLETION \| EVIDENCE` | Learn→Apply conversion, Time to transfer |
 | `build_session_started` | BUILD session created | — | Build→Extract |
-| `context_pack_copied` *(client)* | copy button | `target: CODEX \| CLAUDE_CODE \| OTHER` | Build usage |
+| `context_pack_copied` *(client)* | copy button | `target: CODEX \| CLAUDE_CODE`, `brief: build-preamble/vN` (the pack's `briefVersion`) | Build usage |
 | `build_session_completed` | BUILD completed | — | Build→Extract |
 | `extraction_generated` | extraction ready | `item_count`, `had_artifacts` | Extraction quality |
 | `extraction_item_classified` | disposition/understanding set | `disposition`, `understanding` | Extraction acceptance |
@@ -301,7 +301,7 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 
 | Endpoint | Notes |
 |---|---|
-| `POST /sessions/:id/context-pack` | Replaces `POST /build/:sessionId/context-pack` (R-15). Body `{ target?: CODEX \| CLAUDE_CODE \| GENERIC }`. |
+| `POST /sessions/:id/context-pack` | Replaces `POST /build/:sessionId/context-pack` (R-15). Body `{ target?: CODEX \| CLAUDE_CODE \| GENERIC }`. Returns `{ target, markdown, included[], briefVersion }`: `briefVersion` names the wording of the agent brief (`build-preamble/vN`) and is repeated on the pack's last line. |
 | `POST /extractions` | 201 when new, 200 when it already existed (idempotent; completes an ACTIVE build session first). Items carry `evidenceRefs[]`, `selfAssessmentQuestion`, `existingConceptId` (R-04): the concept the student already had when the extraction was made, or `null`; a concept created later by classifying an item never sets it ("In your library" means it existed before the review). |
 | `GET /extractions/:id` · `GET /sessions/:id/extraction` | The latter returns `null` when none exists. |
 | `PATCH /extractions/:id/items/:itemId` | Returns `{ item, debt }`. |

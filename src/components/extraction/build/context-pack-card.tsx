@@ -19,11 +19,14 @@ export function ContextPackCard({
   sessionId,
   projectId,
   included,
+  briefVersion,
   packs,
 }: {
   sessionId: string;
   projectId: string;
   included: ContextPackEntry[];
+  /** Which wording of the agent brief the packs carry (recorded with the copy event). */
+  briefVersion: string;
   packs: Record<Target, string>;
 }) {
   const [status, setStatus] = useState<string | null>(null);
@@ -49,7 +52,7 @@ export function ContextPackCard({
         name: "context_pack_copied",
         entityType: "session",
         entityId: sessionId,
-        metadata: { target },
+        metadata: { target, brief: briefVersion },
       },
     });
   }

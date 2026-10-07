@@ -5,7 +5,7 @@ import { BUILD_COPY } from "@/lib/copy-build";
 import { concepts, learningDebtItems } from "@/lib/db/schema";
 import { ConflictError, NotFoundError, parseOrThrow } from "@/lib/errors";
 import { ownedBy } from "@/lib/ownership";
-import { BUILD_PREAMBLE } from "@/prompts/build/preamble";
+import { BUILD_PREAMBLE, BUILD_PREAMBLE_VERSION } from "@/prompts/build/preamble";
 import {
   loadLatestContext,
   loadOwnedOpportunity,
@@ -37,6 +37,8 @@ export interface ContextPack {
   target: ContextPackTarget;
   markdown: string;
   included: ContextPackEntry[];
+  /** The wording of the agent-facing brief in `markdown`; also stamped on its last line. */
+  briefVersion: string;
 }
 
 const HEADERS: Record<ContextPackTarget, string> = {
@@ -109,9 +111,16 @@ export async function buildContextPack(
         ? `${reviewing.map((name) => `- ${name}`).join("\n")}\n\nWhere these come up, a short explanation helps.`
         : "(none listed)"
     }`,
+    // Ties a pasted pack, and the `context_pack_copied` event, to the wording that produced it.
+    `Brief version: ${BUILD_PREAMBLE_VERSION}`,
   ];
 
-  return { target, markdown: `${sections.join("\n\n")}\n`, included };
+  return {
+    target,
+    markdown: `${sections.join("\n\n")}\n`,
+    included,
+    briefVersion: BUILD_PREAMBLE_VERSION,
+  };
 }
 
 /**

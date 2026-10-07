@@ -64,7 +64,8 @@ export const BUILD_COPY = {
       "Your notes didn't save yet, so the session is not finished. Your text is still here; check your connection and try again.",
     finishHeading: "When you're finished",
     summaryLabel: "Build summary",
-    summaryHint: "Paste the agent's closing summary, or write your own.",
+    summaryHint:
+      "Paste the agent's closing summary, or write your own. Leave out keys, tokens and .env contents.",
     artifactsHeading: "Artifact references (optional)",
     artifactsHint:
       "Commits, PRs, files or links that show the work. They make the review more precise.",
@@ -111,8 +112,7 @@ export const BUILD_COPY = {
       "It stays in your history but won't be reviewed for concepts. You can start a new Build session any time.",
     delete: "Delete session",
     deleteTitle: "Delete this Build session?",
-    deleteBody:
-      `This permanently deletes the session with its notes, summary and any potential concepts from its review. Concepts you already added to ${copy.needsReview.label} stay.`,
+    deleteBody: `This permanently deletes the session with its notes, summary and any potential concepts from its review. Concepts you already added to ${copy.needsReview.label} stay.`,
     cancel: "Cancel",
   },
 

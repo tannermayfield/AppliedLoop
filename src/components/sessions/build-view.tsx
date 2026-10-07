@@ -91,6 +91,7 @@ async function ActiveBuild({ c, session }: { c: Ctx; session: SessionDetailDto }
         sessionId={session.id}
         projectId={session.project.id}
         included={codex.included}
+        briefVersion={codex.briefVersion}
         packs={{ CODEX: codex.markdown, CLAUDE_CODE: claude.markdown }}
       />
       {/* One notes saver for the editor and the finish form: Finish & Extract saves the notes
