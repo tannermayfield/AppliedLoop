@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ZodError, type z } from "zod";
-import type { AppContext } from "./context";
+import type { AppContext, SystemContext } from "./context";
 import {
   DomainError,
   ForbiddenError,
@@ -87,6 +87,62 @@ function requestIdFor(req: Request): string {
 
 /** Fetch-metadata values that mean "a page from another origin sent this". */
 const FOREIGN_FETCH_SITES = new Set(["cross-site", "same-site"]);
+
+/** The only paths `webhookRoute` serves (see `createWebhookRoute`). */
+export const SIGNATURE_AUTHENTICATED_PATHS: readonly string[] = ["/api/v1/webhooks/github"];
+const MAX_WEBHOOK_BODY_BYTES = 5 * 1024 * 1024;
+
+export interface WebhookArgs {
+  s: SystemContext;
+  req: Request;
+  /** The body exactly as received: the signature is computed over these bytes. */
+  rawBody: Uint8Array;
+  requestId: string;
+}
+
+/**
+ * THE ONE DELIBERATE EXEMPTION from the cross-site guard. GitHub delivers webhooks server to
+ * server: there is no browser and no session cookie, so the cookie-oriented guard in `apiRoute`
+ * (Origin check, JSON-only bodies) protects nothing here, and a session lookup could only answer
+ * 401. Instead the handler MUST verify the request's HMAC signature over `rawBody` before acting;
+ * a forged cross-site request cannot carry a valid one.
+ *
+ * Narrow by construction: it serves only the paths in SIGNATURE_AUTHENTICATED_PATHS (used anywhere
+ * else it fails closed with a 500), it never resolves a session, and a test checks that exactly one
+ * route file uses it. Responses keep the standard `{ data }` / `{ error }` envelope.
+ */
+export function createWebhookRoute(resolveSystem: () => Promise<SystemContext>) {
+  return function webhookRoute(handler: (args: WebhookArgs) => Promise<unknown>) {
+    return async (req: Request): Promise<Response> => {
+      const requestId = requestIdFor(req);
+      try {
+        const path = new URL(req.url).pathname;
+        if (!SIGNATURE_AUTHENTICATED_PATHS.includes(path)) {
+          throw new Error(`webhookRoute serves only signature-authenticated paths, not ${path}.`);
+        }
+        const rawBody = await readRawBody(req);
+        const result = await handler({ s: await resolveSystem(), req, rawBody, requestId });
+        if (result instanceof Response) return withRequestId(result, requestId);
+        return json({ data: result ?? null }, 200, requestId);
+      } catch (error) {
+        return errorResponse(error, requestId);
+      }
+    };
+  };
+}
+
+async function readRawBody(req: Request): Promise<Uint8Array> {
+  const tooLarge = () => new ValidationError("The request body is too large.");
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_WEBHOOK_BODY_BYTES) throw tooLarge();
+  const body = new Uint8Array(await req.arrayBuffer());
+  if (body.byteLength > MAX_WEBHOOK_BODY_BYTES) throw tooLarge();
+  return body;
+}
+
+/** A 303 to `location` (absolute https://github.com/… or a same-site path). */
+export function seeOther(location: string): Response {
+  return new Response(null, { status: 303, headers: { location } });
+}
 
 /**
  * The cross-site guard. Cookie-authenticated mutations must come from our own pages: reject a

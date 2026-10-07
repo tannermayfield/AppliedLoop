@@ -8,6 +8,7 @@ import {
   toSkillDto,
   type SkillDto,
 } from "@/domain/learning/skills";
+import { assertRepoUrlFollowsLink } from "@/domain/integrations/github/repositories";
 import { inTransaction, type AppContext } from "@/lib/context";
 import { STARTER_MILESTONE } from "@/lib/copy-projects";
 import {
@@ -420,6 +421,8 @@ export async function updateProject(
 ): Promise<ProjectDto> {
   const input = parseOrThrow(updateProjectInput, raw);
   const id = idOrNotFound(projectId, "Project");
+  // While a GitHub repository is linked, repo_url mirrors it (P1); it changes by (un)linking.
+  if (input.repoUrl !== undefined) await assertRepoUrlFollowsLink(c, id, input.repoUrl);
 
   const changes: Partial<typeof projects.$inferInsert> = {};
   if (input.name !== undefined) changes.name = input.name;

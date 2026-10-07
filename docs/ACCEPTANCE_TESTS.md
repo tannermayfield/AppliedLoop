@@ -27,12 +27,14 @@
 | AT-15 | Learning debt | Only user-confirmed concepts enter queue | Rejecting candidate creates no debt | V0 | I |
 | AT-16 | Evidence | Artifact can link concept/project/skill | Deleted artifact link does not delete historical explanation | V0 | I |
 | AT-17 | Progress | Apply + evidence may advance stage with confirmation | User can decline suggested advancement | V0 | U, I |
-| AT-18 | GitHub | User can select authorized repo only | Repo outside installation not retrievable | P1 | I |
-| AT-19 | GitHub disconnect | Future API access ends | Integration state immediately reflects disconnected | P1 | I |
+| AT-18 | GitHub | User can select authorized repo only | Repo outside installation not retrievable | P1 ✔ | I |
+| AT-19 | GitHub disconnect | Future API access ends | Integration state immediately reflects disconnected | P1 ✔ | I |
 | AT-20 | AI failure | Core record not lost | Provider timeout leaves session resumable | V0 | I |
 | AT-21 | Duplicate completion | Same session not completed twice | Repeated request returns idempotent result | V0 | I |
 | AT-22 | Privacy | Raw private repo content is not retained unexpectedly | Persistence audit | V0 | I |
 | AT-23 | Telemetry | Core events recorded | Activation/Apply/Extract funnel query succeeds | V0 | I |
+
+**P1 GitHub (implemented 2026-10-06, no longer deferred).** AT-18: `tests/integration/integrations/github/repositories.test.ts` ("a repository outside the installation is NOT_FOUND and nothing is stored"), `artifacts.test.ts` (an unshared repository's items are NOT_FOUND at GitHub's end), `routes.test.ts` (404 over HTTP), and the connect flow refuses an installation the student's GitHub account cannot access (`connect.test.ts`). AT-19: `flow-and-disconnect.test.ts` (state is `DISCONNECTED` immediately; every GitHub path then refuses without calling the client; links marked stale, never deleted) and `routes.test.ts`. AT-22 for GitHub data: `persistence-audit.test.ts` (real HTTP client, every table and log line scanned). All against `FakeGitHubClient` or GitHub-shaped fixtures: real GitHub still needs the manual checks in [integrations/github-app.md](integrations/github-app.md).
 
 Notes on how to read two of these in v0 (proposed): **AT-12** is satisfied by asserting that the exported context pack contains no Apply-mode restrictions, if R-07 is resolved as "no in-app Build assistant". **AT-22** also covers pasted code in tutor messages, not only repository content (R-12).
 

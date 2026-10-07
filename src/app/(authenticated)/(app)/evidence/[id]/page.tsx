@@ -13,6 +13,7 @@ import { getMe } from "@/domain/identity/me";
 import { getPageContext } from "@/lib/app-context";
 import { CONTRIBUTION_LABELS } from "@/lib/copy";
 import { evidenceCopy } from "@/lib/copy-evidence";
+import { githubCopy } from "@/lib/copy-integrations";
 
 export const metadata: Metadata = { title: "Evidence" };
 
@@ -74,6 +75,16 @@ export default async function EvidenceDetailPage({ params }: { params: Promise<{
         )}
         <Field label={copy.artifact}>
           <ArtifactRef type={evidence.artifactType} value={evidence.artifactUrl} />
+          {evidence.githubArtifact && (
+            <span className="text-muted-foreground mt-1 block text-xs">
+              {githubCopy.evidence.fromGitHub(evidence.githubArtifact.repositoryFullName)}
+              {evidence.githubArtifact.stale && (
+                <span role="note" className="mt-1 block">
+                  {githubCopy.evidence.stale}
+                </span>
+              )}
+            </span>
+          )}
         </Field>
         <Field label={copy.contribution}>{CONTRIBUTION_LABELS[evidence.contributionType]}</Field>
         <Field label={copy.project}>

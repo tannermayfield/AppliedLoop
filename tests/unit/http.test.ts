@@ -9,6 +9,7 @@ const fakeContext = {
   auth: { userId: "u1", roles: ["STUDENT"] },
   db: {} as never,
   ai: {} as never,
+  github: {} as never,
   now: () => new Date(),
 } as AppContext;
 

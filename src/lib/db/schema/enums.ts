@@ -60,6 +60,16 @@ export const AI_PURPOSES = ["CAPTURE", "OPPORTUNITY", "TUTOR", "EXTRACTION"] as 
 export const AI_RUN_STATUSES = ["SUCCEEDED", "FAILED", "INVALID_OUTPUT", "TIMEOUT"] as const;
 export const PROGRESS_SOURCES = ["USER", "APPLY_COMPLETION", "EVIDENCE"] as const;
 
+/** P1 integrations. GitHub is the only provider in v1 (Canvas is v2). */
+export const INTEGRATION_PROVIDERS = ["GITHUB"] as const;
+/**
+ * CONNECTED ⇄ SUSPENDED (the app was suspended on GitHub) and anything → DISCONNECTED (the student
+ * disconnected, or the app was uninstalled). Disconnected rows are kept as history.
+ */
+export const INTEGRATION_STATUSES = ["CONNECTED", "SUSPENDED", "DISCONNECTED"] as const;
+/** docs/DATA_MODEL.md. RELEASE is part of the model but the v1 picker does not offer it. */
+export const GITHUB_ARTIFACT_TYPES = ["COMMIT", "PR", "FILE", "RELEASE"] as const;
+
 export type UserRole = (typeof USER_ROLES)[number];
 export type LearningSourceType = (typeof LEARNING_SOURCE_TYPES)[number];
 export type ConceptStage = (typeof CONCEPT_STAGES)[number];
@@ -82,6 +92,9 @@ export type EvidenceVisibility = (typeof EVIDENCE_VISIBILITIES)[number];
 export type AiPurpose = (typeof AI_PURPOSES)[number];
 export type AiRunStatus = (typeof AI_RUN_STATUSES)[number];
 export type ProgressSource = (typeof PROGRESS_SOURCES)[number];
+export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
+export type IntegrationStatus = (typeof INTEGRATION_STATUSES)[number];
+export type GitHubArtifactType = (typeof GITHUB_ARTIFACT_TYPES)[number];
 
 export const userRoleEnum = pgEnum("user_role", USER_ROLES);
 export const learningSourceTypeEnum = pgEnum("learning_source_type", LEARNING_SOURCE_TYPES);
@@ -108,3 +121,6 @@ export const evidenceVisibilityEnum = pgEnum("evidence_visibility", EVIDENCE_VIS
 export const aiPurposeEnum = pgEnum("ai_purpose", AI_PURPOSES);
 export const aiRunStatusEnum = pgEnum("ai_run_status", AI_RUN_STATUSES);
 export const progressSourceEnum = pgEnum("progress_source", PROGRESS_SOURCES);
+export const integrationProviderEnum = pgEnum("integration_provider", INTEGRATION_PROVIDERS);
+export const integrationStatusEnum = pgEnum("integration_status", INTEGRATION_STATUSES);
+export const githubArtifactTypeEnum = pgEnum("github_artifact_type", GITHUB_ARTIFACT_TYPES);

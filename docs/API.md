@@ -92,10 +92,10 @@ Use UUIDs, UTC ISO-8601 timestamps, server-side schema validation, cursor pagina
 | GET | `/evidence/:id` | ✔ | — | Detail |
 | PATCH | `/evidence/:id` | ✔ | mutable fields | Detail |
 | DELETE | `/evidence/:id` | ✔ | — | 204 |
-| GET | `/integrations` | P1 | — | Connection status |
-| GET | `/integrations/github/repositories` | P1 | — | Available repositories |
-| POST | `/projects/:id/repositories` | P1 | repository ID | Project/repository association |
-| POST | `/webhooks/github` | P1 | GitHub webhook payload | 2xx after signature validation |
+| GET | `/integrations` | P1 ✔ | — | Connection status |
+| GET | `/integrations/github/repositories` | P1 ✔ | — | Available repositories |
+| POST | `/projects/:id/repositories` | P1 ✔ | repository ID | Project/repository association |
+| POST | `/webhooks/github` | P1 ✔ | GitHub webhook payload | 2xx after signature validation |
 | POST | `/events` | ✔ | telemetry event | 202 |
 
 ## Representative schemas
@@ -361,3 +361,27 @@ DELETE /api/v1/me
 - The browser's session cookie is expired on the same response. If that step fails the account is already gone, and a leftover cookie is treated as signed out.
 - No telemetry event is written. The only trace is one anonymous log line (`Account deleted`) with no user id, email or counts.
 - Not reversible. Backups kept by the database host age out on their own schedule (ADR-0004).
+
+## Implemented additions (P1 GitHub integration, 2026-10-06)
+
+Owner approved building P1 on 2026-10-06. Setup and the connect flow: [integrations/github-app.md](integrations/github-app.md). Nothing here ever returns a token. "Repository ID" in the table above is GitHub's numeric id (`githubRepositoryId`).
+
+| Endpoint | Notes |
+|---|---|
+| `GET /integrations` | `{ github: GitHubConnection }`. Not set up on the deployment: exactly `{ github: { configured: false, connected: false } }`. Otherwise `{ configured: true, connected, status: CONNECTED \| SUSPENDED \| DISCONNECTED \| null, account: { login, type } \| null, connectedAt, disconnectedAt, manageUrl }`; `connected` is true only for `CONNECTED`. Reads the database only. |
+| `GET /integrations/github/connect?returnTo=` | Browser navigation (a plain link). `303` to GitHub's install page with a signed, user-bound, 15-minute, single-use `state`; or `303` back to `returnTo` (a same-site path, default `/projects`) with `?github=not_configured`. |
+| `GET /integrations/github/callback` | GitHub's redirect (`code`, `installation_id`, `setup_action`, `state`, or `error`). Always `303`: back to the state's `returnTo` with `?github=<notice>` (`connected`, `requested`, `denied`, `not_accessible`, `already_connected`, `github_unavailable`, `not_configured`, `invalid_request`, `state_missing` / `state_invalid` / `state_expired` / `state_other_user` / `state_used`, `missing_installation`, `code_rejected`), or on to GitHub's authorize page when a code is still needed. An installation is connected only if GitHub lists it among those the authorizing GitHub account can access. |
+| `DELETE /integrations/github` | `204`, idempotent. Immediate (AT-19); calls nothing on GitHub (it does not uninstall the App). Picked items that evidence uses are marked stale; unused ones are deleted. |
+| `GET /integrations/github/repositories` | The installation's shared repositories, live from GitHub: `[{ githubId, fullName, private, defaultBranch, htmlUrl, linkedProjectIds }]` (`Paged`, `nextCursor: null`, at most 500). |
+| `GET /projects/:id/repositories` | The linked repository or `null`: `{ id, githubId, fullName, private, defaultBranch, htmlUrl, linkedAt, state: ACTIVE \| SUSPENDED \| REMOVED \| DISCONNECTED }`. Local data only. |
+| `POST /projects/:id/repositories` | Body `{ githubRepositoryId }` → `201` with the same shape. One repository per project (a new one replaces the old). A repository outside the installation is `404` (AT-18). Sets `projects.repo_url` to the repository's address. |
+| `DELETE /projects/:id/repositories` | `204`, idempotent; works in any connection state and calls nothing on GitHub. Clears `repo_url` if it still holds the repository's address. |
+| `GET /projects/:id/repositories/artifacts?type=&q=` | Picker data, live, nothing stored. `type`: `COMMIT` (default) \| `PR` \| `FILE`. `q` filters commits (message / sha prefix) and pull requests (title / `#number`) among the 30 most recent; for `FILE` it is the path to look up. Items `{ type, ref, title, url, occurredAt, sha, number, state, path }`. |
+| `POST /projects/:id/repositories/artifacts` | Body `{ type, ref }` (`COMMIT`: sha ≥ 7 hex · `PR`: number · `FILE`: path) → `201` `{ id, type, title, url, sha, occurredAt, repositoryFullName, stale }`. Re-reads the item from GitHub; creates or reuses one metadata row (re-picking clears `stale`). Unknown item `404`. |
+| `POST /evidence` · `PATCH /evidence/:id` | Accept `githubArtifactId` (an id from the call above). The artifact type and link then come from the stored item, not the request. It must belong to the caller (else `404`), come from the repository linked to the evidence's project (else `400` on `githubArtifactId`), and still be verifiable (else `409`). On PATCH, `null` (or editing the link by hand) turns it back into a pasted link. Evidence responses gain `githubArtifact: { id, type, title, repositoryFullName, stale } \| null`. |
+| `PATCH /projects/:id` | While a repository is linked, `repoUrl` may only be sent unchanged (`409`, reason `GITHUB_REPOSITORY_LINKED`). |
+| `POST /webhooks/github` | No session. `X-Hub-Signature-256` (HMAC-SHA256 of the raw body) is required: missing or wrong → `401`. Needs `X-GitHub-Event` and `X-GitHub-Delivery` (`400` otherwise). Handles only `installation` (`deleted`, `suspend`, `unsuspend`) and `installation_repositories` (`removed`) → `200 { status: "handled", event, action, affected }`; a repeated delivery id → `200 { status: "duplicate" }`; anything else → `202 { status: "ignored" }`. The only route exempt from the cross-site guard (it is not cookie-authenticated). |
+
+**Errors.** New code `INTEGRATION_UNAVAILABLE` (`503`): GitHub did not answer usably; nothing changed. GitHub rate limits are `429 RATE_LIMITED`. A `409 CONFLICT` from these endpoints carries `details.reason`: `GITHUB_NOT_CONFIGURED`, `GITHUB_NOT_CONNECTED`, `GITHUB_SUSPENDED`, `GITHUB_NO_REPOSITORY`, `GITHUB_LINK_STALE`, `GITHUB_REPOSITORY_REMOVED`, `GITHUB_ACCESS_DENIED`, `GITHUB_REPOSITORY_MOVED`, `GITHUB_ARTIFACT_STALE`, `GITHUB_REPOSITORY_LINKED`.
+
+**Telemetry** (server-emitted): `integration_connected` (`provider`, `account_type`, `repository_selection`, `reconnected`) · `integration_disconnected` (`provider`, `via: USER \| WEBHOOK`) · `repository_linked` (`provider`, `private`, `replaced`) · `github_artifact_attached` (`provider`, `type`; entity = the evidence).

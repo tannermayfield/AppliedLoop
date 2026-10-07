@@ -11,6 +11,7 @@ export type ErrorCode =
   | "RATE_LIMITED"
   | "AI_UNAVAILABLE"
   | "AI_INVALID_OUTPUT"
+  | "INTEGRATION_UNAVAILABLE"
   | "INTERNAL";
 
 export const HTTP_STATUS: Record<ErrorCode, number> = {
@@ -23,6 +24,7 @@ export const HTTP_STATUS: Record<ErrorCode, number> = {
   RATE_LIMITED: 429,
   AI_UNAVAILABLE: 503,
   AI_INVALID_OUTPUT: 502,
+  INTEGRATION_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 
@@ -105,6 +107,13 @@ export class AiUnavailableError extends DomainError {
 export class AiInvalidOutputError extends DomainError {
   constructor(message = "The AI returned an answer the app could not use.", details?: unknown) {
     super("AI_INVALID_OUTPUT", message, details);
+  }
+}
+
+/** An external service (GitHub, P1) did not answer usably. Nothing was changed; try again. */
+export class IntegrationUnavailableError extends DomainError {
+  constructor(message = "GitHub didn't answer just now. Nothing was changed; try again in a moment.") {
+    super("INTEGRATION_UNAVAILABLE", message);
   }
 }
 

@@ -18,6 +18,7 @@ import {
   type ArtifactType,
   type ConceptStage,
   type ContributionType,
+  type GitHubArtifactType,
   type SessionType,
 } from "@/lib/db/schema/enums";
 import { NotFoundError, ValidationError, parseOrThrow } from "@/lib/errors";
@@ -33,6 +34,11 @@ import {
   toSkillDto,
   type SkillDto,
 } from "@/domain/learning/skills";
+import {
+  githubArtifactSummaries,
+  resolveArtifactForEvidence,
+  type GitHubArtifactSummary,
+} from "@/domain/integrations/github/artifacts";
 
 // Evidence: a record of real work (docs/SPEC.md §3, SPEC_REVIEW R-18 to R-20). It always points at
 // one of the student's projects, may point at concepts and skills, carries the student's own
@@ -56,6 +62,8 @@ export interface EvidenceDto {
   explanation: string;
   artifactType: ArtifactType;
   artifactUrl: string | null;
+  /** Set when the artifact was picked from GitHub (P1); `stale` once GitHub access ended. */
+  githubArtifact: GitHubArtifactSummary | null;
   contributionType: ContributionType;
   visibility: "PRIVATE" | "PUBLIC";
   concepts: EvidenceConceptDto[];
@@ -149,6 +157,11 @@ export const createEvidenceInput = z.object({
   explanation: text(MAX_EXPLANATION),
   artifactType: z.enum(ARTIFACT_TYPES),
   artifactUrl,
+  /** An item picked from GitHub (P1). Its type and link then come from the stored item. */
+  githubArtifactId: z
+    .guid()
+    .nullish()
+    .transform((value) => value ?? undefined),
   contributionType: z.enum(CONTRIBUTION_TYPES),
   conceptIds: idList.optional().transform((ids) => ids ?? []),
   skillIds: idList.optional().transform((ids) => ids ?? []),
@@ -161,6 +174,8 @@ export const updateEvidenceInput = z.object({
   explanation: optionalText(MAX_EXPLANATION),
   artifactType: z.enum(ARTIFACT_TYPES).optional(),
   artifactUrl: artifactUrl.optional(),
+  /** Pick a GitHub item (P1), or `null` to keep the link as a plain pasted one. */
+  githubArtifactId: z.guid().nullable().optional(),
   contributionType: z.enum(CONTRIBUTION_TYPES).optional(),
   conceptIds: idList.optional(),
   skillIds: idList.optional(),
@@ -194,8 +209,9 @@ async function hydrate(c: AppContext, rows: EvidenceRow[]): Promise<EvidenceDto[
   if (rows.length === 0) return [];
   const ids = rows.map((row) => row.id);
   const projectIds = [...new Set(rows.map((row) => row.projectId))];
+  const artifactIds = rows.flatMap((row) => (row.githubArtifactId ? [row.githubArtifactId] : []));
 
-  const [projectRows, conceptRows, skillRows] = await Promise.all([
+  const [projectRows, conceptRows, skillRows, artifacts] = await Promise.all([
     c.db
       .select({ id: projects.id, name: projects.name })
       .from(projects)
@@ -218,6 +234,7 @@ async function hydrate(c: AppContext, rows: EvidenceRow[]): Promise<EvidenceDto[
       .innerJoin(skills, eq(skills.id, evidenceSkills.skillId))
       .where(and(inArray(evidenceSkills.evidenceId, ids), skillVisibleTo(c.auth)))
       .orderBy(skills.name),
+    githubArtifactSummaries(c, artifactIds),
   ]);
 
   const projectName = new Map(projectRows.map((row) => [row.id, row.name]));
@@ -231,6 +248,7 @@ async function hydrate(c: AppContext, rows: EvidenceRow[]): Promise<EvidenceDto[
     explanation: row.explanation,
     artifactType: row.artifactType,
     artifactUrl: row.artifactUrl,
+    githubArtifact: row.githubArtifactId ? (artifacts.get(row.githubArtifactId) ?? null) : null,
     contributionType: row.contributionType,
     visibility: row.visibility,
     concepts: conceptRows
@@ -284,6 +302,48 @@ async function assertConceptsOwned(c: AppContext, conceptIds: string[]): Promise
   if (rows.length !== conceptIds.length) throw new NotFoundError("Concept");
 }
 
+interface ChosenArtifact {
+  artifactType: ArtifactType;
+  artifactUrl: string | null;
+  githubArtifactId: string | null;
+  githubType: GitHubArtifactType | null;
+}
+
+/**
+ * A GitHub item picked for this project (P1) brings its own type and link, re-read from the
+ * stored item rather than taken from the request. Otherwise the pasted link must fit its type.
+ */
+async function chooseArtifact(
+  c: AppContext,
+  input: { artifactType: ArtifactType; artifactUrl: string | null; githubArtifactId?: string | null },
+  projectId: string,
+): Promise<ChosenArtifact> {
+  if (input.githubArtifactId) {
+    const picked = await resolveArtifactForEvidence(c, input.githubArtifactId, projectId);
+    return {
+      artifactType: picked.artifactType,
+      artifactUrl: picked.artifactUrl,
+      githubArtifactId: picked.id,
+      githubType: picked.type,
+    };
+  }
+  const problem = artifactProblem(input.artifactType, input.artifactUrl);
+  if (problem) throwArtifactProblem(problem);
+  return {
+    artifactType: input.artifactType,
+    artifactUrl: input.artifactUrl,
+    githubArtifactId: null,
+    githubType: null,
+  };
+}
+
+const emitAttached = (c: AppContext, evidenceId: string, type: GitHubArtifactType) =>
+  emit(c, "github_artifact_attached", {
+    entityType: "evidence",
+    entityId: evidenceId,
+    metadata: { provider: "GITHUB", type },
+  });
+
 // ---------------------------------------------------------------------------------------------
 // Use-cases
 // ---------------------------------------------------------------------------------------------
@@ -293,10 +353,8 @@ export async function createEvidence(
   raw: CreateEvidenceInput,
 ): Promise<{ evidence: EvidenceDto; suggestedAdvances: SuggestedAdvance[] }> {
   const input = parseOrThrow(createEvidenceInput, raw);
-  const problem = artifactProblem(input.artifactType, input.artifactUrl);
-  if (problem) throwArtifactProblem(problem);
-
   await assertProject(c, input.projectId);
+  const artifact = await chooseArtifact(c, input, input.projectId);
   if (input.sessionId) await assertSession(c, input.sessionId, input.projectId);
   await assertConceptsOwned(c, input.conceptIds);
   await assertSkillsAccessible(c, input.skillIds);
@@ -312,8 +370,9 @@ export async function createEvidence(
         title: input.title,
         description: input.description,
         explanation: input.explanation,
-        artifactType: input.artifactType,
-        artifactUrl: input.artifactUrl,
+        artifactType: artifact.artifactType,
+        artifactUrl: artifact.artifactUrl,
+        githubArtifactId: artifact.githubArtifactId,
         contributionType: input.contributionType,
         visibility: "PRIVATE",
         createdAt: now,
@@ -341,6 +400,7 @@ export async function createEvidence(
       has_artifact: row.artifactType !== "NOTE",
     },
   });
+  if (artifact.githubType) await emitAttached(c, row.id, artifact.githubType);
 
   const [evidence] = await hydrate(c, [row]);
   return { evidence, suggestedAdvances: suggestAdvances(evidence) };
@@ -458,18 +518,30 @@ export async function updateEvidence(
   const input = parseOrThrow(updateEvidenceInput, raw);
   const current = await loadOwnedRow(c, id);
 
-  const type = input.artifactType ?? current.artifactType;
+  let type = input.artifactType ?? current.artifactType;
   // Switching to a Note drops the link (there is nothing to point at) but never the student's words.
-  const url =
+  let url =
     input.artifactUrl !== undefined
       ? input.artifactUrl
       : type === "NOTE"
         ? null
         : current.artifactUrl;
-  const touchesArtifact = input.artifactType !== undefined || input.artifactUrl !== undefined;
-  if (touchesArtifact) {
-    const problem = artifactProblem(type, url);
-    if (problem) throwArtifactProblem(problem);
+  let touchesArtifact = input.artifactType !== undefined || input.artifactUrl !== undefined;
+  let githubArtifactId = current.githubArtifactId;
+  let attached: GitHubArtifactType | null = null;
+  if (input.githubArtifactId) {
+    const picked = await chooseArtifact(c, { ...current, githubArtifactId: input.githubArtifactId }, current.projectId);
+    ({ artifactType: type, artifactUrl: url, githubArtifactId } = picked);
+    touchesArtifact = true;
+    if (githubArtifactId !== current.githubArtifactId) attached = picked.githubType;
+  } else {
+    if (touchesArtifact) {
+      const problem = artifactProblem(type, url);
+      if (problem) throwArtifactProblem(problem);
+    }
+    // A link edited by hand no longer describes the picked GitHub item: it is a pasted link now.
+    const edited = touchesArtifact && (type !== current.artifactType || url !== current.artifactUrl);
+    if (input.githubArtifactId === null || edited) githubArtifactId = null;
   }
 
   if (input.conceptIds) await assertConceptsOwned(c, input.conceptIds);
@@ -484,6 +556,7 @@ export async function updateEvidence(
         ...(input.explanation !== undefined && { explanation: input.explanation }),
         ...(input.contributionType !== undefined && { contributionType: input.contributionType }),
         ...(touchesArtifact && { artifactType: type, artifactUrl: url }),
+        githubArtifactId,
         updatedAt: tx.now(),
       })
       .where(and(eq(evidenceItems.id, current.id), ownedBy(evidenceItems.userId, tx.auth)));
@@ -506,6 +579,7 @@ export async function updateEvidence(
     }
   });
 
+  if (attached) await emitAttached(c, current.id, attached);
   return getEvidence(c, current.id);
 }
 

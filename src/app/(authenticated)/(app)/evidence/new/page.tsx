@@ -5,6 +5,7 @@ import { z } from "zod";
 import { EvidenceForm, type EvidenceFormValues } from "@/components/evidence/evidence-form";
 import { PageHeader } from "@/components/page-header";
 import { getEvidencePrefill } from "@/domain/evidence/prefill";
+import { listPickableRepositories } from "@/domain/integrations/github/repositories";
 import { getConcept, listConcepts } from "@/domain/learning/concepts";
 import { listSkills } from "@/domain/learning/skills";
 import { listProjects } from "@/domain/projects/projects";
@@ -32,10 +33,11 @@ export default async function NewEvidencePage({
   const conceptId = idParam(raw.conceptId);
   const c = await getPageContext();
 
-  const [projects, conceptPage, catalog] = await Promise.all([
+  const [projects, conceptPage, catalog, githubRepos] = await Promise.all([
     listProjects(c),
     listConcepts(c, { limit: 100 }),
     listSkills(c),
+    listPickableRepositories(c),
   ]);
 
   const initial: EvidenceFormValues = {
@@ -103,6 +105,7 @@ export default async function NewEvidencePage({
         catalog={catalog}
         initial={initial}
         notice={notice}
+        githubRepos={githubRepos}
       />
     </>
   );

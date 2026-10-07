@@ -109,6 +109,66 @@ describe("loadEnv", () => {
     expect(env.oauth.google).toBeUndefined();
   });
 
+  describe("GitHub App (P1)", () => {
+    const PEM = "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAK\n-----END RSA PRIVATE KEY-----";
+    const complete = {
+      NODE_ENV: "test",
+      GITHUB_APP_ID: "123456",
+      GITHUB_APP_SLUG: "appliedloop",
+      GITHUB_APP_CLIENT_ID: "Iv23liExampleClient",
+      GITHUB_APP_CLIENT_SECRET: "client-secret-value",
+      GITHUB_APP_PRIVATE_KEY: PEM,
+      GITHUB_APP_WEBHOOK_SECRET: "a-long-webhook-secret-value",
+    };
+
+    it("is simply off when no variable is set: no problems to report", () => {
+      const env = loadEnv({ NODE_ENV: "test" });
+      expect(env.githubApp).toBeUndefined();
+      expect(env.githubAppProblems).toEqual([]);
+    });
+
+    it("is configured when all six variables are present and well-formed", () => {
+      const env = loadEnv(complete);
+      expect(env.githubApp).toEqual({
+        appId: "123456",
+        slug: "appliedloop",
+        clientId: "Iv23liExampleClient",
+        clientSecret: "client-secret-value",
+        privateKey: PEM,
+        webhookSecret: "a-long-webhook-secret-value",
+      });
+      expect(env.githubAppProblems).toEqual([]);
+    });
+
+    it("accepts a one-line, \\n-escaped private key", () => {
+      const env = loadEnv({ ...complete, GITHUB_APP_PRIVATE_KEY: PEM.replace(/\n/g, "\\n") });
+      expect(env.githubApp?.privateKey).toBe(PEM);
+    });
+
+    it("treats a partial configuration as off and names what is missing, never the values", () => {
+      const env = loadEnv({ ...complete, GITHUB_APP_CLIENT_SECRET: "", GITHUB_APP_ID: "abc" });
+      expect(env.githubApp).toBeUndefined();
+      expect(env.githubAppProblems).toEqual([
+        "GITHUB_APP_ID must be the numeric App ID",
+        "GITHUB_APP_CLIENT_SECRET is missing",
+      ]);
+      expect(env.githubAppProblems.join(" ")).not.toContain("abc");
+    });
+
+    it("rejects a short webhook secret and a key that is not PEM", () => {
+      const env = loadEnv({
+        ...complete,
+        GITHUB_APP_WEBHOOK_SECRET: "short",
+        GITHUB_APP_PRIVATE_KEY: "not a key",
+      });
+      expect(env.githubApp).toBeUndefined();
+      expect(env.githubAppProblems).toEqual([
+        "GITHUB_APP_PRIVATE_KEY must be the PEM private key",
+        "GITHUB_APP_WEBHOOK_SECRET must be at least 16 characters",
+      ]);
+    });
+  });
+
   it("keeps model ids as configuration, never defaults", () => {
     const env = loadEnv({ NODE_ENV: "test" });
     expect(env.aiModels).toEqual({

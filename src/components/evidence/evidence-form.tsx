@@ -13,8 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError, apiRequest } from "@/components/learning/api-client";
 import { NativeSelect } from "@/components/learning/native-select";
 import { SkillPicker } from "@/components/learning/skill-picker";
+import { ArtifactPicker } from "@/components/integrations/artifact-picker";
 import type { SkillDto } from "@/domain/learning/skills";
 import { CONTRIBUTION_LABELS } from "@/lib/copy";
+import { githubCopy } from "@/lib/copy-integrations";
 import { requestCopy } from "@/lib/copy-learning";
 import { ARTIFACT_HINTS, ARTIFACT_LABELS, evidenceCopy } from "@/lib/copy-evidence";
 import { ARTIFACT_TYPES, CONTRIBUTION_TYPES } from "@/lib/db/schema/enums";
@@ -31,6 +33,8 @@ export interface EvidenceFormValues {
   explanation: string;
   artifactType: ArtifactType;
   artifactUrl: string;
+  /** Set while the link is a GitHub item picked in this form (P1). */
+  githubArtifactId?: string | null;
   contributionType: ContributionType;
   conceptIds: string[];
   skillIds: string[];
@@ -45,6 +49,8 @@ interface Props {
   initial: EvidenceFormValues;
   /** A message to show above the form (e.g. the prefill could not be loaded). */
   notice?: string;
+  /** Project id → "owner/name" for projects whose linked GitHub repository can be read now. */
+  githubRepos?: Record<string, string>;
 }
 
 function FieldError({ id, message }: { id: string; message?: string }) {
@@ -64,9 +70,11 @@ export function EvidenceForm({
   catalog,
   initial,
   notice,
+  githubRepos = {},
 }: Props) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
+  const [pickedTitle, setPickedTitle] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +83,12 @@ export function EvidenceForm({
 
   const set = <K extends keyof EvidenceFormValues>(key: K, value: EvidenceFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
+
+  /** Editing the link by hand makes it a plain pasted link again. */
+  const setArtifact = (patch: Partial<Pick<EvidenceFormValues, "artifactType" | "artifactUrl">>) => {
+    setValues((current) => ({ ...current, ...patch, githubArtifactId: null }));
+    setPickedTitle(null);
+  };
 
   const toggleConcept = (id: string, checked: boolean) =>
     set(
@@ -94,6 +108,7 @@ export function EvidenceForm({
       explanation: values.explanation,
       artifactType: values.artifactType,
       artifactUrl: isNote ? null : values.artifactUrl.trim() || null,
+      ...(values.githubArtifactId ? { githubArtifactId: values.githubArtifactId } : {}),
       contributionType: values.contributionType,
       conceptIds: values.conceptIds,
       skillIds: values.skillIds,
@@ -145,6 +160,7 @@ export function EvidenceForm({
 
   const chosenSkills = catalog.filter((skill) => values.skillIds.includes(skill.id));
   const needsLink = values.artifactType !== "NOTE";
+  const githubRepo = githubRepos[values.projectId];
 
   return (
     <form onSubmit={submit} className="bg-card grid max-w-2xl gap-5 rounded-2xl border p-4 sm:p-6">
@@ -285,7 +301,7 @@ export function EvidenceForm({
           <NativeSelect
             id="evidence-artifact-type"
             value={values.artifactType}
-            onChange={(event) => set("artifactType", event.target.value as ArtifactType)}
+            onChange={(event) => setArtifact({ artifactType: event.target.value as ArtifactType })}
             className="h-10 sm:h-9"
           >
             {ARTIFACT_TYPES.map((type) => (
@@ -301,7 +317,7 @@ export function EvidenceForm({
             <Input
               id="evidence-artifact-url"
               value={values.artifactUrl}
-              onChange={(event) => set("artifactUrl", event.target.value)}
+              onChange={(event) => setArtifact({ artifactUrl: event.target.value })}
               placeholder={ARTIFACT_HINTS[values.artifactType]}
               maxLength={2000}
               aria-invalid={Boolean(fieldErrors.artifactUrl)}
@@ -309,6 +325,29 @@ export function EvidenceForm({
               className="h-10 sm:h-9"
             />
             <FieldError id="evidence-artifact-url-error" message={fieldErrors.artifactUrl} />
+          </div>
+        )}
+        {githubRepo && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:col-span-2">
+            <ArtifactPicker
+              projectId={values.projectId}
+              repositoryName={githubRepo}
+              onPicked={(artifact) => {
+                setValues((current) => ({
+                  ...current,
+                  artifactType: artifact.type === "RELEASE" ? "URL" : artifact.type,
+                  artifactUrl: artifact.url,
+                  githubArtifactId: artifact.id,
+                }));
+                setPickedTitle(artifact.title);
+              }}
+            />
+            <p aria-live="polite" className="text-muted-foreground min-w-0 text-xs break-words">
+              {pickedTitle
+                ? githubCopy.artifactPicker.picked(pickedTitle)
+                : githubCopy.artifactPicker.from(githubRepo)}
+            </p>
+            <FieldError id="evidence-github-artifact-error" message={fieldErrors.githubArtifactId} />
           </div>
         )}
       </div>
