@@ -36,7 +36,13 @@ export const tableNames = (): string[] => schemaTables().map((table) => getTable
 const CUSTOM_OWNERSHIP: Record<string, (owner: OwnerRef) => SQL> = {
   auth_verifications: (owner) =>
     sql`("value" like ${`%${owner.id}%`} or lower("identifier") = ${owner.email.toLowerCase()})`,
+  // Webhook bookkeeping for the whole system (a delivery id, an event name): no student data, so no
+  // row ever belongs to a student, and account deletion never touches it.
+  github_webhook_deliveries: () => sql`false`,
 };
+
+/** Tables that hold no student data at all, so "every table has test rows" does not apply to them. */
+export const SYSTEM_TABLES: ReadonlySet<string> = new Set(["github_webhook_deliveries"]);
 
 function primaryKeyColumn(table: PgTable): string {
   const key = getTableConfig(table).columns.find((column) => column.primary);

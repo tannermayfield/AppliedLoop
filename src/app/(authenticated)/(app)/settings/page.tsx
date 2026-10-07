@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
+import { GitHubConnectionCard } from "@/components/integrations/github-connection-card";
+import { parseGitHubNotice } from "@/components/integrations/connect-notice";
 import { AiDataSection } from "@/components/settings/ai-data-section";
 import { DeleteAccount } from "@/components/settings/delete-account";
 import { ExportData } from "@/components/settings/export-data";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { listTimeZones } from "@/components/settings/time-zones";
 import { getMe } from "@/domain/identity/me";
+import { getIntegrations } from "@/domain/integrations/github/integration";
 import { getPageContext } from "@/lib/app-context";
 import { settingsCopy } from "@/lib/copy-settings";
 import { getEnv } from "@/lib/env";
@@ -17,9 +20,15 @@ export const metadata: Metadata = { title: "Settings" };
  * from the account menu, not the primary navigation. The AI mode is read from server configuration
  * here and passed down as a plain string: no secret and no setting a browser could change.
  */
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const c = await getPageContext();
   const me = await getMe(c);
+  const { github } = await getIntegrations(c);
+  const notice = parseGitHubNotice((await searchParams).github);
 
   return (
     <>
@@ -31,8 +40,7 @@ export default async function SettingsPage() {
           timezone={me.profile.timezone}
           timeZones={listTimeZones(me.profile.timezone)}
         />
-        {/* integrations slot */}
-        {/* The coordinator adds <GithubConnectionCard /> here (src/components/integrations/github-connection-card.tsx). */}
+        <GitHubConnectionCard status={github} returnTo="/settings" notice={notice} />
         <AiDataSection mode={getEnv().aiMode} />
         <ExportData />
         <DeleteAccount email={me.email} />

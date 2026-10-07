@@ -30,6 +30,7 @@ import {
   projectSkills,
   sessionMessages,
   users,
+  githubConnectStates,
 } from "@/lib/db/schema";
 import { createTestApp, type TestApp, type TestUser } from "@/test/app";
 import {
@@ -39,6 +40,12 @@ import {
   insertSkill,
   insertSource,
 } from "@/test/factories";
+import {
+  insertGitHubArtifact,
+  insertGitHubRepository,
+  insertIntegration,
+  linkProjectRepository,
+} from "@/test/factories-github";
 import { insertContextSnapshot, insertOpportunity } from "@/test/factories-sessions";
 
 // SECURITY_REVIEW "Destructive cascades": deleting a `users` row must leave NOTHING of that student
@@ -52,7 +59,7 @@ for (const value of Object.values(schema) as unknown[]) {
 }
 
 /** Tables that are not linked to `users` by any foreign key path (see the last test). */
-const UNLINKED_TABLES = new Set(["auth_verifications"]);
+const UNLINKED_TABLES = new Set(["auth_verifications", "github_webhook_deliveries"]);
 
 function uuidColumns(table: PgTable): AnyPgColumn[] {
   return Object.values(getTableColumns(table)).filter(
@@ -198,6 +205,26 @@ async function populate(app: TestApp, user: TestUser, sharedSkillId: string): Pr
         .returning()
     )[0],
   );
+  // GitHub (P1): connection, repository linked to the project, a picked commit, a connect state.
+  const integration = keep(
+    await insertIntegration(db, user.id, {
+      installationId: 1_000 + Math.floor(Math.random() * 1e6),
+    }),
+  );
+  const repository = keep(
+    await insertGitHubRepository(db, user.id, integration.id, {
+      externalRepoId: 1_000 + Math.floor(Math.random() * 1e6),
+    }),
+  );
+  await linkProjectRepository(db, project.id, repository);
+  keep(await insertGitHubArtifact(db, user.id, repository.id));
+  await db
+    .insert(githubConnectStates)
+    .values({
+      nonceHash: `nonce-${user.id}`,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
   const evidence = keep(
     (
       await db

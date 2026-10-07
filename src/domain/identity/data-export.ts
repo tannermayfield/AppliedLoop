@@ -13,11 +13,15 @@ import {
   evidenceSkills,
   extractionItems,
   extractions,
+  githubArtifacts,
+  githubRepositories,
+  integrations,
   learningDebtItems,
   learningSources,
   practiceOpportunities,
   progressEvents,
   projectContextSnapshots,
+  projectRepositories,
   projectSkills,
   projects,
   sessionMessages,
@@ -71,6 +75,19 @@ export const DATA_EXPORT_COVERAGE = {
   auth_sessions: { excluded: "session tokens, IP addresses and user agents" },
   auth_accounts: { excluded: "OAuth provider tokens and the password hash" },
   auth_verifications: { excluded: "one-time tokens" },
+  integrations: {
+    section: "integrations",
+    note: "GitHub connection metadata (account, installation id, status); no token is ever stored",
+  },
+  github_repositories: { section: "githubRepositories" },
+  project_repositories: { section: "projects[].repositories" },
+  github_artifacts: { section: "githubArtifacts" },
+  github_connect_states: {
+    excluded: "single-use hashes behind the GitHub connect flow; no student content",
+  },
+  github_webhook_deliveries: {
+    excluded: "system bookkeeping of webhook deliveries; holds no student data",
+  },
 } as const satisfies Record<string, { section: string; note?: string } | { excluded: string }>;
 
 /**
@@ -97,6 +114,9 @@ export const EXPORT_OMITTED_COLUMNS = {
   evidenceItems: ["userId"],
   aiRuns: ["userId", "inputHash"],
   eventLog: ["userId"],
+  integrations: ["userId"],
+  githubRepositories: ["userId"],
+  githubArtifacts: ["userId"],
 } as const satisfies Record<string, readonly string[]>;
 
 type Omitted<S extends keyof typeof EXPORT_OMITTED_COLUMNS> =
@@ -128,6 +148,8 @@ export interface AccountExport {
     skills: (LinkedRef & {
       relationshipType: (typeof projectSkills.$inferSelect)["relationshipType"];
     })[];
+    /** The GitHub repositories linked to the project (see `githubRepositories`). */
+    repositories: { repositoryId: string; linkedAt: Date }[];
   })[];
   projectContextSnapshots: SectionRow<typeof projectContextSnapshots, "projectContextSnapshots">[];
   practiceOpportunities: SectionRow<typeof practiceOpportunities, "practiceOpportunities">[];
@@ -143,6 +165,10 @@ export interface AccountExport {
   /** Parsed model answers and run metadata. The prompt fingerprint is not included. */
   aiRuns: SectionRow<typeof aiRuns, "aiRuns">[];
   eventLog: SectionRow<typeof eventLog, "eventLog">[];
+  /** GitHub connection metadata: never a token (none is stored). */
+  integrations: SectionRow<typeof integrations, "integrations">[];
+  githubRepositories: SectionRow<typeof githubRepositories, "githubRepositories">[];
+  githubArtifacts: SectionRow<typeof githubArtifacts, "githubArtifacts">[];
 }
 
 /** The table's columns minus the ones a section leaves out, ready for `db.select(...)`. */
@@ -351,6 +377,36 @@ export async function exportMyData(c: AppContext): Promise<AccountExport> {
         .where(ownedBy(eventLog.userId, c.auth))
         .orderBy(asc(eventLog.occurredAt), asc(eventLog.id));
 
+      const integrationRows = await db
+        .select(columnsOf(integrations, "integrations"))
+        .from(integrations)
+        .where(ownedBy(integrations.userId, c.auth))
+        .orderBy(asc(integrations.createdAt), asc(integrations.id));
+      const repositoryRows = await db
+        .select(columnsOf(githubRepositories, "githubRepositories"))
+        .from(githubRepositories)
+        .where(ownedBy(githubRepositories.userId, c.auth))
+        .orderBy(asc(githubRepositories.createdAt), asc(githubRepositories.id));
+      const githubArtifactRows = await db
+        .select(columnsOf(githubArtifacts, "githubArtifacts"))
+        .from(githubArtifacts)
+        .where(ownedBy(githubArtifacts.userId, c.auth))
+        .orderBy(asc(githubArtifacts.createdAt), asc(githubArtifacts.id));
+      // A join table: reached only through a project the caller owns.
+      const projectRepositoryRows = await db
+        .select({
+          projectId: projectRepositories.projectId,
+          repositoryId: projectRepositories.repositoryId,
+          linkedAt: projectRepositories.createdAt,
+        })
+        .from(projectRepositories)
+        .innerJoin(
+          projects,
+          and(eq(projects.id, projectRepositories.projectId), ownedBy(projects.userId, c.auth)),
+        )
+        .orderBy(asc(projectRepositories.createdAt), asc(projectRepositories.repositoryId));
+      const repositoriesByProject = groupBy(projectRepositoryRows, (row) => row.projectId);
+
       const ref = ({ id, name }: LinkedRef): LinkedRef => ({ id, name });
       return {
         exportVersion: EXPORT_VERSION,
@@ -371,6 +427,9 @@ export async function exportMyData(c: AppContext): Promise<AccountExport> {
             ...ref(link),
             relationshipType: link.relationshipType,
           })),
+          repositories: (repositoriesByProject.get(row.id) ?? []).map(
+            ({ repositoryId, linkedAt }) => ({ repositoryId, linkedAt }),
+          ),
         })),
         projectContextSnapshots: snapshotRows,
         practiceOpportunities: opportunityRows,
@@ -386,6 +445,9 @@ export async function exportMyData(c: AppContext): Promise<AccountExport> {
         })),
         aiRuns: aiRunRows,
         eventLog: eventRows,
+        integrations: integrationRows,
+        githubRepositories: repositoryRows,
+        githubArtifacts: githubArtifactRows,
       };
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },

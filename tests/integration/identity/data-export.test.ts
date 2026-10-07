@@ -63,17 +63,23 @@ describe("data export", () => {
       expect(Object.keys(DATA_EXPORT_COVERAGE).sort()).toEqual([...tableNames()].sort());
     });
 
-    it("excludes only the Better Auth tables that hold secrets", () => {
+    it("excludes only the Better Auth tables that hold secrets and two GitHub system tables", () => {
       const excluded = Object.entries(DATA_EXPORT_COVERAGE)
         .filter(([, rule]) => "excluded" in rule)
         .map(([table]) => table);
-      expect(excluded.sort()).toEqual(["auth_accounts", "auth_sessions", "auth_verifications"]);
+      expect(excluded.sort()).toEqual([
+        "auth_accounts",
+        "auth_sessions",
+        "auth_verifications",
+        "github_connect_states",
+        "github_webhook_deliveries",
+      ]);
     });
 
     it("exports every column of a table except the ones it names as omitted", async () => {
       const { alice } = await twoStudents();
       const data = await exportMyData(alice.ctx);
-      const embedded = new Set(["skills", "concepts"]); // link arrays added to concepts/projects/evidence
+      const embedded = new Set(["skills", "concepts", "repositories"]); // link arrays added to concepts/projects/evidence
       const tables = new Map(schemaTables().map((table) => [getTableName(table), table]));
 
       for (const [tableName, rule] of Object.entries(DATA_EXPORT_COVERAGE)) {
@@ -128,6 +134,9 @@ describe("data export", () => {
         ["evidenceItems", "evidence_items"],
         ["aiRuns", "ai_runs"],
         ["eventLog", "event_log"],
+        ["integrations", "integrations"],
+        ["githubRepositories", "github_repositories"],
+        ["githubArtifacts", "github_artifacts"],
       ];
       for (const [section, table] of sections) {
         expect((data[section] as unknown[]).length, `${section} vs ${table}`).toBe(owned[table]);
@@ -143,6 +152,12 @@ describe("data export", () => {
       expect(linkCount(data.projects, "skills")).toBe(owned.project_skills);
       expect(linkCount(data.evidenceItems, "skills")).toBe(owned.evidence_skills);
       expect(linkCount(data.evidenceItems, "concepts")).toBe(owned.evidence_concepts);
+      const linkedRepositories = data.projects.reduce(
+        (sum, row) => sum + row.repositories.length,
+        0,
+      );
+      expect(linkedRepositories).toBe(owned.project_repositories);
+      expect(owned.project_repositories).toBeGreaterThan(0);
     });
 
     it("names what a record links to, so the file reads without the database", async () => {
@@ -197,6 +212,9 @@ describe("data export", () => {
         "evidenceItems",
         "aiRuns",
         "eventLog",
+        "integrations",
+        "githubRepositories",
+        "githubArtifacts",
       ]);
     });
 

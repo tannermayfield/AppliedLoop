@@ -4,7 +4,7 @@ import { deleteAccount } from "@/domain/identity/account-deletion";
 import { ValidationError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertRichAccount } from "@/test/factories-account";
-import { dumpDatabase, ownedRowCounts, tableNames } from "@/test/schema-tables";
+import { dumpDatabase, ownedRowCounts, SYSTEM_TABLES, tableNames } from "@/test/schema-tables";
 
 // Account deletion (docs/SPEC.md §6, ADR-0008, AT-22). The point of this file: after a deletion,
 // NOTHING of the student is left in ANY table (the tables are walked programmatically, so a table
@@ -38,7 +38,7 @@ describe("account deletion", () => {
 
     expect(Object.keys(counts).sort()).toEqual([...tableNames()].sort());
     const empty = Object.entries(counts)
-      .filter(([, n]) => n === 0)
+      .filter(([table, n]) => n === 0 && !SYSTEM_TABLES.has(table))
       .map(([table]) => table);
     expect(empty, `no test rows for: ${empty.join(", ")}`).toEqual([]);
   });

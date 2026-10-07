@@ -5,6 +5,7 @@ import {
   authSessions,
   authVerifications,
   eventLog,
+  githubConnectStates,
   skills,
   userProfiles,
 } from "../lib/db/schema";
@@ -17,6 +18,12 @@ import {
   insertSource,
 } from "./factories";
 import { insertEvidence } from "./factories-evidence";
+import {
+  insertGitHubArtifact,
+  insertGitHubRepository,
+  insertIntegration,
+  linkProjectRepository,
+} from "./factories-github";
 import { insertDebt, insertExtraction, insertExtractionItem } from "./factories-extraction";
 import { insertProgressEvent } from "./factories-learning";
 import {
@@ -61,6 +68,9 @@ export interface RichAccount {
     extraction: string;
     extractionItem: string;
     debt: string;
+    integration: string;
+    repository: string;
+    githubArtifact: string;
   };
 }
 
@@ -213,6 +223,26 @@ export async function insertRichAccount(app: TestApp, user: TestUser): Promise<R
     skillIds: [sharedSkill.id, customSkill.id],
   });
 
+  // GitHub (P1): a connection, a repository linked to the project, a picked commit, a connect state.
+  // Metadata only: no token or repository content exists to store.
+  const integration = await insertIntegration(db, user.id, {
+    externalAccountLogin: `octo-${marker}`.toLowerCase(),
+    installationId: 7_000_000 + Math.floor(Math.random() * 1_000_000),
+  });
+  const repository = await insertGitHubRepository(db, user.id, integration.id, {
+    fullName: `octo-${marker}/adaptive-language`.toLowerCase(),
+    externalRepoId: 8_000_000 + Math.floor(Math.random() * 1_000_000),
+  });
+  await linkProjectRepository(db, project.id, repository);
+  const githubArtifact = await insertGitHubArtifact(db, user.id, repository.id, {
+    title: `Commit ${marker}`,
+  });
+  await db.insert(githubConnectStates).values({
+    nonceHash: `nonce-${marker}`,
+    userId: user.id,
+    expiresAt: inOneHour,
+  });
+
   // Telemetry.
   await db.insert(eventLog).values([
     { userId: user.id, eventName: "today_viewed", metadataJson: { note: marker } },
@@ -242,6 +272,9 @@ export async function insertRichAccount(app: TestApp, user: TestUser): Promise<R
       extraction: extraction.id,
       extractionItem: extractionItem.id,
       debt: debt.id,
+      integration: integration.id,
+      repository: repository.id,
+      githubArtifact: githubArtifact.id,
     },
   };
 }
