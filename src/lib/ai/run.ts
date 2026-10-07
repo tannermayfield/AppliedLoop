@@ -4,6 +4,7 @@ import type { AppContext } from "../context";
 import { aiRuns } from "../db/schema";
 import type { AiRunStatus } from "../db/schema/enums";
 import { AiInvalidOutputError, AiUnavailableError, RateLimitedError } from "../errors";
+import { logger } from "../logger";
 import { emit } from "../telemetry/emit";
 import type { PromptSpec } from "./types";
 
@@ -22,9 +23,13 @@ export interface RunAiResult<O> {
   aiRunId: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * Exported because the AI route handlers' `maxDuration` must exceed the worst case of this budget
+ * (MAX_ATTEMPTS x DEFAULT_TIMEOUT_MS per `runAi`); tests/unit/ai-route-limits.test.ts enforces it.
+ */
+export const DEFAULT_TIMEOUT_MS = 60_000;
 /** One retry when the model returns something that fails schema validation. */
-const MAX_ATTEMPTS = 2;
+export const MAX_ATTEMPTS = 2;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
@@ -170,6 +175,20 @@ async function record(
       createdAt: c.now(),
     })
     .returning({ id: aiRuns.id });
+  // One line per model call, for dashboards and alerts without database access. Facts about the
+  // call only: never the prompt, the student's text, the output or the error message.
+  logger[fields.status === "SUCCEEDED" ? "info" : "warn"]("AI run", {
+    event: "ai_run",
+    aiRunId: row.id,
+    purpose: base.purpose,
+    provider: base.provider,
+    model: base.model,
+    promptVersion: base.promptVersion,
+    status: fields.status,
+    latencyMs: fields.latencyMs,
+    inputTokens: fields.inputTokens,
+    outputTokens: fields.outputTokens,
+  });
   return row.id;
 }
 

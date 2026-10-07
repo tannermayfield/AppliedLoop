@@ -15,6 +15,12 @@ pnpm lint                       eslint (use `pnpm exec eslint <paths>` for a sub
 pnpm build                      production build (forces AUTH_DEV_LOGIN=0 on purpose)
 pnpm dev                        dev server on :3000, local PGlite database in .data/pglite
 pnpm db:generate --name <name>  create a SQL migration after editing src/lib/db/schema/*
+pnpm db:migrate                 apply migrations (PGlite, or DATABASE_URL_UNPOOLED / DATABASE_URL); idempotent
+pnpm db:seed                    seed the shared skill catalog
+pnpm db:seed:demo               the demo student, every screen populated (local PGlite only; --reset to redo)
+pnpm db:restore-check           prove a logical backup restores identically (in memory, about 5 s)
+pnpm env:check                  would this environment be accepted in production? (names, never values)
+pnpm vercel-build               what Vercel runs: check config, migrate, then build (does nothing locally)
 pnpm e2e                        Playwright (starts its own server on :3100)
 pnpm eval                       AI evals against REAL models (costs money; needs a gateway key)
 ```

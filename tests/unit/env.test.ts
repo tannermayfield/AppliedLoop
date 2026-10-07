@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "@/lib/env";
+import { productionEnv, TEST_AUTH_SECRET } from "@/test/env";
 
-const SECRET = "x".repeat(40);
+const SECRET = TEST_AUTH_SECRET;
 
 describe("loadEnv", () => {
   it("applies development defaults and falls back to demo AI without a key", () => {
@@ -23,7 +24,9 @@ describe("loadEnv", () => {
   });
 
   it("never fakes AI in production: no key means off", () => {
-    const env = loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: SECRET });
+    // A complete production environment (production now refuses an incomplete one: see
+    // env-check.test.ts) that simply has no gateway key.
+    const env = loadEnv(productionEnv());
     expect(env.aiMode).toBe("off");
   });
 

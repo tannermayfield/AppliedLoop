@@ -303,3 +303,11 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 | `POST /events` | 202 `{ data: { accepted: true } }`; body `{ name, entityType?, entityId?, metadata? (under 2 KB) }`; `name` must be a client event. |
 
 KPI SQL lives in `scripts/kpi/` (see its README); the page `/evidence/[id]/edit` reuses the evidence form.
+
+## Operational endpoints (outside `/api/v1`)
+
+| Endpoint          | Notes                                                                                                                                                                                                                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health` | **Public** (no sign-in, never redirected), for uptime monitors and for whoever just deployed. Not wrapped in the `{ data }` envelope. `{ status: "ok" \| "down" \| "misconfigured", version, db: "ok" \| "down", time }` with `Cache-Control: no-store` and an `x-request-id`. HTTP 200 only for `ok`; 503 otherwise. |
+
+`db` is `ok` when the database is reachable **and** migrated to the version this build expects (a database ahead of the code, as after a rollback, is fine); otherwise `down`, which also covers a misconfigured app (it does not try). `misconfigured` means the environment fails the production rules (`src/lib/env-check.ts`). The body never says which variable: names and rules go to the logs. It carries no secret and no user data. The database answer is reused for 5 seconds. See docs/RUNBOOK.md.

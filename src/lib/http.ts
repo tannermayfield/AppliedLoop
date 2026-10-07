@@ -9,6 +9,7 @@ import {
   validationErrorFromZod,
 } from "./errors";
 import { errorFields, logger } from "./logger";
+import { runWithRequestId, safeRequestId } from "./request-context";
 
 // The HTTP edge. Every route handler under src/app/api/v1 is built with `apiRoute`, which:
 //   resolve AppContext (401 if signed out) → run the handler → wrap as { data } / { error }
@@ -45,28 +46,34 @@ export function createApiRoute(resolveContext: () => Promise<AppContext>) {
     options: { status?: number } = {},
   ) {
     return async (req: Request, segment?: RouteSegmentData): Promise<Response> => {
+      // A client may supply its own id (to correlate with its logs), but only a short, plain one:
+      // it is echoed into response headers and every log line.
       const requestId =
-        req.headers.get("x-request-id") ?? `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-      try {
-        assertSameOrigin(req);
-        const c = await resolveContext();
-        const params = flattenParams(await segment?.params);
-        const result = await handler({ c, req, url: new URL(req.url), params, requestId });
+        safeRequestId(req.headers.get("x-request-id")) ??
+        `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      // Every log line written while this request is handled carries the request id.
+      return runWithRequestId(requestId, async () => {
+        try {
+          assertSameOrigin(req);
+          const c = await resolveContext();
+          const params = flattenParams(await segment?.params);
+          const result = await handler({ c, req, url: new URL(req.url), params, requestId });
 
-        if (result instanceof Response) return withRequestId(result, requestId);
-        if (options.status === 204)
-          return withRequestId(new Response(null, { status: 204 }), requestId);
-        if (result instanceof Paged) {
-          return json(
-            { data: result.items, meta: { nextCursor: result.nextCursor } },
-            200,
-            requestId,
-          );
+          if (result instanceof Response) return withRequestId(result, requestId);
+          if (options.status === 204)
+            return withRequestId(new Response(null, { status: 204 }), requestId);
+          if (result instanceof Paged) {
+            return json(
+              { data: result.items, meta: { nextCursor: result.nextCursor } },
+              200,
+              requestId,
+            );
+          }
+          return json({ data: result ?? null }, options.status ?? 200, requestId);
+        } catch (error) {
+          return errorResponse(error, requestId);
         }
-        return json({ data: result ?? null }, options.status ?? 200, requestId);
-      } catch (error) {
-        return errorResponse(error, requestId);
-      }
+      });
     };
   };
 }

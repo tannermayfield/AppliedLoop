@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { checkEnvironment, EnvError, resolveAiMode, type EnvCheck } from "./env-check";
+
+export { EnvError } from "./env-check";
+export type { EnvCheck, EnvProblem } from "./env-check";
 
 // All configuration is read through here, validated once, and never exposed to the browser.
 // Call `getEnv()` inside functions, not at module top level, so `next build` and tests can load
 // modules without every variable being present.
+//
+// In production `loadEnv` refuses to start with an incomplete configuration and names EVERY
+// missing or invalid variable at once (see env-check.ts for the rules). It never prints a value.
 
 /** `.env` files contain `KEY=` for unset values; treat those as undefined. */
 const blankToUndefined = (value: unknown) =>
@@ -63,13 +70,31 @@ export interface Env {
 
 const TEST_SECRET = "test-secret-test-secret-test-secret-0123456789";
 
+/**
+ * Every problem with `source`, without throwing: for the health check, boot logs and the deploy
+ * scripts. `loadEnv` throws exactly these problems.
+ */
+export function validateEnv(source: Record<string, string | undefined> = process.env): EnvCheck {
+  const parsed = rawSchema.safeParse(source);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      problems: parsed.error.issues.map((issue) => ({
+        variable: String(issue.path[0] ?? "environment"),
+        message: issue.message,
+      })),
+      warnings: [],
+    };
+  }
+  return checkEnvironment(source, parsed.data);
+}
+
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
+  const check = validateEnv(source);
+  if (!check.ok) throw new EnvError(check.problems);
+
   const raw = rawSchema.parse(source);
   const isProduction = raw.NODE_ENV === "production";
-
-  if (isProduction && raw.AUTH_DEV_LOGIN) {
-    throw new Error("AUTH_DEV_LOGIN must not be enabled in production.");
-  }
 
   let authSecret = raw.BETTER_AUTH_SECRET;
   if (!authSecret) {
@@ -87,8 +112,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 
   // Explicit AI_MODE wins. Otherwise: a gateway key means live; no key means demo while
   // developing and off in production (a deployed app must never silently fake its AI).
-  const aiMode: AiMode =
-    raw.AI_MODE ?? (raw.AI_GATEWAY_API_KEY ? "live" : isProduction ? "off" : "demo");
+  const aiMode: AiMode = resolveAiMode(raw);
 
   return {
     nodeEnv: raw.NODE_ENV,
@@ -128,3 +152,16 @@ export function getEnv(): Env {
 export function resetEnvCache(): void {
   cached = undefined;
 }
+
+/**
+ * Every variable the application reads: the schema's, plus the operational ones that only the
+ * logger, the error reporter and the deploy scripts read. `.env.example` and docs/RUNBOOK.md must
+ * mention each one (tests/unit/env-docs.test.ts).
+ */
+export const ENV_VARIABLES: readonly string[] = [
+  ...Object.keys(rawSchema.shape),
+  "DATABASE_URL_UNPOOLED",
+  "ERROR_WEBHOOK_URL",
+  "LOG_LEVEL",
+  "MIGRATE_ON_PREVIEW",
+];
