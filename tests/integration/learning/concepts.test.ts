@@ -419,6 +419,17 @@ describe("concepts", () => {
       expect(await names({ search: "   " })).toHaveLength(3);
     });
 
+    it("a search also reads the student's own notes (the Learn filter finds a word they wrote down)", async () => {
+      const alice = await app.makeUser();
+      await insertConcept(app.db, alice.id, {
+        name: "Transactions",
+        notes: "Remember: ROLLBACK undoes the whole unit of work",
+      });
+      await insertConcept(app.db, alice.id, { name: "Joins" });
+      const found = await listConcepts(alice.ctx, { search: "rollback" });
+      expect(found.items.map((concept) => concept.name)).toEqual(["Transactions"]);
+    });
+
     it("treats % and _ in a search as plain characters", async () => {
       const alice = await app.makeUser();
       await insertConcept(app.db, alice.id, { name: "100% coverage" });

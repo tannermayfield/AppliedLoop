@@ -16,8 +16,19 @@ import { Thread } from "./thread";
 
 const t = APPLY_COPY.session;
 
-/** An APPLY session (teal tutor mode). ACTIVE sessions are interactive; ended ones are read-only. */
-export function ApplyView({ session, aiMode }: { session: SessionDetailDto; aiMode: AiMode }) {
+/**
+ * An APPLY session (teal tutor mode). ACTIVE sessions are interactive; ended ones are read-only.
+ * `openDebtId` is the session concept's open Needs Review item, if any (a plain id for the client).
+ */
+export function ApplyView({
+  session,
+  aiMode,
+  openDebtId = null,
+}: {
+  session: SessionDetailDto;
+  aiMode: AiMode;
+  openDebtId?: string | null;
+}) {
   const active = session.status === "ACTIVE";
   const opportunity = session.opportunity;
   const tutorUnavailable = !session.project.aiEnabled
@@ -67,6 +78,7 @@ export function ApplyView({ session, aiMode }: { session: SessionDetailDto; aiMo
                   projectId={session.project.id}
                   concept={session.concept}
                   suggestApplied={belowApplied}
+                  openDebtId={openDebtId}
                 />
               )}
               {session.status === "SWITCHED" && session.switchedToSessionId && (

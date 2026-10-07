@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Repeat2 } from "lucide-react";
+import { ShellSearch } from "@/components/search/shell-search";
 import { copy } from "@/lib/copy";
 import { NavLinks } from "./nav-links";
 import { UserMenu } from "./user-menu";
@@ -21,11 +22,12 @@ export function AppShell({ user, demoAi, children }: Props) {
       <aside className="bg-sidebar sticky top-0 hidden h-svh w-60 shrink-0 flex-col border-r p-4 md:flex">
         <Link
           href="/today"
-          className="font-display mb-8 flex items-center gap-2 px-2 text-xl font-semibold"
+          className="font-display mb-6 flex items-center gap-2 px-2 text-xl font-semibold"
         >
           <Repeat2 className="text-apply size-5" aria-hidden />
           {copy.brand.name}
         </Link>
+        <ShellSearch variant="sidebar" className="mb-4" />
         <NavLinks variant="sidebar" />
         <div className="mt-auto flex items-center gap-3 border-t pt-4">
           <UserMenu name={user.name} email={user.email} />
@@ -37,14 +39,16 @@ export function AppShell({ user, demoAi, children }: Props) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="bg-background/90 sticky top-0 z-30 flex items-center justify-between border-b px-4 py-2 backdrop-blur md:hidden">
+        <header className="bg-background/90 sticky top-0 z-30 flex items-center gap-3 border-b px-4 py-2 backdrop-blur md:hidden">
           <Link
             href="/today"
-            className="font-display flex items-center gap-2 text-lg font-semibold"
+            className="font-display flex shrink-0 items-center gap-2 text-lg font-semibold"
           >
             <Repeat2 className="text-apply size-5" aria-hidden />
-            {copy.brand.name}
+            {/* The wordmark gives way to the icon on the narrowest phones so the search box fits. */}
+            <span className="max-[400px]:sr-only">{copy.brand.name}</span>
           </Link>
+          <ShellSearch variant="bar" className="flex-1" />
           <UserMenu name={user.name} email={user.email} />
         </header>
 

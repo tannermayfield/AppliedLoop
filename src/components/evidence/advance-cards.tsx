@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { ResolveNeedsReviewPrompt } from "@/components/needs-review/resolve-prompt";
 import { Button } from "@/components/ui/button";
 import { api } from "@/components/sessions/api";
 import { evidenceCopy } from "@/lib/copy-evidence";
@@ -13,7 +14,11 @@ export interface AdvanceSuggestion {
   conceptName: string;
 }
 
-type Outcome = { kind: "done" } | { kind: "dismissed" } | { kind: "error"; message: string };
+type Outcome =
+  /** `debtId`: the concept's open Needs Review item, when it has one (the student may close it). */
+  | { kind: "done"; debtId: string | null }
+  | { kind: "dismissed" }
+  | { kind: "error"; message: string };
 
 /**
  * After evidence is saved: one calm card per suggested concept. Nothing changes unless the student
@@ -35,11 +40,20 @@ export function AdvanceCards({
       method: "PATCH",
       body: { stage: "DEMONSTRATED", reason: copy.reason, source: "EVIDENCE" },
     });
+    // Now that the student confirmed it, ask (never decide) whether the concept's Needs Review item
+    // can close. A failed lookup just means no question.
+    let debtId: string | null = null;
+    if (result.ok) {
+      const lookup = await api<{ id: string }[]>(
+        `/api/v1/learning-debt?conceptId=${encodeURIComponent(suggestion.conceptId)}&limit=1`,
+      );
+      debtId = lookup.ok ? (lookup.data[0]?.id ?? null) : null;
+    }
     setPendingId(null);
     setOutcomes((current) => ({
       ...current,
       [suggestion.conceptId]: result.ok
-        ? { kind: "done" }
+        ? { kind: "done", debtId }
         : { kind: "error", message: result.message },
     }));
   }
@@ -68,9 +82,18 @@ export function AdvanceCards({
               aria-live="polite"
             >
               {outcome?.kind === "done" && (
-                <p role="status" className="text-sm">
-                  {copy.done(suggestion.conceptName)}
-                </p>
+                <div className="space-y-3">
+                  <p role="status" className="text-sm">
+                    {copy.done(suggestion.conceptName)}
+                  </p>
+                  {outcome.debtId && (
+                    <ResolveNeedsReviewPrompt
+                      debtId={outcome.debtId}
+                      conceptName={suggestion.conceptName}
+                      as="h3"
+                    />
+                  )}
+                </div>
               )}
               {outcome?.kind === "dismissed" && (
                 <p role="status" className="text-muted-foreground text-sm">

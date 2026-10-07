@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ModeBadge } from "@/components/mode-badge";
+import { StageBadge } from "@/components/stage-badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime } from "@/components/learning/format";
 import type { SkillOption } from "@/components/learning/skill-picker";
@@ -8,7 +9,7 @@ import type { GitHubConnectionDto } from "@/domain/integrations/github/integrati
 import type { ProjectRepositoryDto } from "@/domain/integrations/github/repositories";
 import type { ContextSnapshotDto } from "@/domain/projects/context";
 import type { ProjectSummaryDto } from "@/domain/projects/projects";
-import { copy } from "@/lib/copy";
+import type { ApplyRecommendation } from "@/domain/today/today";
 import { projectsCopy } from "@/lib/copy-projects";
 import type { GitHubConnectNotice } from "@/lib/integrations/github/types";
 import { AiToggle } from "./ai-toggle";
@@ -29,6 +30,10 @@ interface Props {
   github: GitHubConnectionDto;
   repository: ProjectRepositoryDto | null;
   githubNotice: GitHubConnectNotice | null;
+  /** Today's Apply choice for this project (the wireframe's "Recommended application"), if any. */
+  recommended: ApplyRecommendation | null;
+  /** Up to three open Needs Review concepts (pinned first); `summary.needsReviewCount` is the total. */
+  needsReviewTop: { conceptId: string; name: string }[];
 }
 
 export function OverviewTab({
@@ -39,6 +44,8 @@ export function OverviewTab({
   github,
   repository,
   githubNotice,
+  recommended,
+  needsReviewTop,
 }: Props) {
   const { project } = summary;
   return (
@@ -75,12 +82,63 @@ export function OverviewTab({
       />
       <ProjectSkills projectId={project.id} skills={summary.skills} catalog={catalog} />
 
+      {recommended && (
+        <section
+          aria-labelledby="recommended-heading"
+          className="border-apply/30 bg-apply-soft flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 sm:p-5"
+        >
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="recommended-heading" className="text-sm font-medium">
+                {t.recommendedHeading}
+              </h2>
+              <ModeBadge mode="APPLY" showLabel={false} />
+            </div>
+            <p className="font-display text-xl font-semibold text-balance">
+              {recommended.conceptName}
+            </p>
+            <p className="flex flex-wrap items-center gap-2 text-sm">
+              <StageBadge stage={recommended.stage} />
+              {t.recommendedBody(recommended.projectName)}
+            </p>
+          </div>
+          <Button asChild>
+            <Link
+              href={recommended.href}
+              aria-label={t.recommendedLabel(recommended.conceptName, recommended.projectName)}
+            >
+              {projectsCopy.actions.startApply}
+            </Link>
+          </Button>
+        </section>
+      )}
+
       {(summary.recentEvidence.length > 0 || summary.needsReviewCount > 0) && (
         <section className="bg-card space-y-3 rounded-2xl border p-4 sm:p-5">
           {summary.needsReviewCount > 0 && (
-            <p className="text-sm">
-              <span className="font-medium">{copy.needsReview.label}:</span>{" "}
-              {t.needsReview(summary.needsReviewCount)}.{" "}
+            <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+              <span className="font-medium">{t.needsReviewHeading}:</span>
+              {needsReviewTop.map((item, index) => (
+                <span key={item.conceptId} className="inline-flex items-baseline gap-2">
+                  {index > 0 && (
+                    <span aria-hidden className="text-muted-foreground">
+                      ·
+                    </span>
+                  )}
+                  <Link
+                    href={`/learn/concepts/${item.conceptId}`}
+                    aria-label={t.needsReviewConcept(item.name)}
+                    className="underline underline-offset-4"
+                  >
+                    {item.name}
+                  </Link>
+                </span>
+              ))}
+              {summary.needsReviewCount > needsReviewTop.length && (
+                <span className="text-muted-foreground">
+                  {t.needsReviewMore(summary.needsReviewCount - needsReviewTop.length)}
+                </span>
+              )}
               <Link
                 href={`/projects/${project.id}?tab=learning`}
                 className="underline underline-offset-4"

@@ -11,6 +11,13 @@ import type {
 // internal names (learning_debt). Rules: never tell a student what they do or don't understand,
 // never use failure language, never use streak/score language.
 
+/**
+ * THE one place the Needs Review label is spelled out. Every other string that mentions it (the
+ * other copy modules, domain error messages) is built from `copy.needsReview.label`, and
+ * tests/unit/copy.test.ts fails when a literal sneaks back in.
+ */
+const NEEDS_REVIEW_LABEL = "Needs Review";
+
 export const copy = {
   brand: {
     name: "AppliedLoop",
@@ -23,9 +30,9 @@ export const copy = {
     evidence: "Evidence",
   },
   needsReview: {
-    label: "Needs Review",
+    label: NEEDS_REVIEW_LABEL,
     empty: "Nothing to review right now.",
-    add: "Add to Needs Review",
+    add: `Add to ${NEEDS_REVIEW_LABEL}`,
   },
   ai: {
     demoBanner: "Demo AI: responses are canned, not from a real model.",
@@ -63,7 +70,7 @@ export const UNDERSTANDING_LABELS: Record<UserUnderstanding, string> = {
 
 export const DISPOSITION_LABELS: Record<ExtractionDisposition, string> = {
   UNREVIEWED: "Not reviewed yet",
-  NEEDS_REVIEW: "Add to Needs Review",
+  NEEDS_REVIEW: copy.needsReview.add,
   ALREADY_KNOW: "Already know",
   IGNORED: "Ignore",
 };

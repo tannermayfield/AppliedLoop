@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { NeedsReviewSummary } from "@/domain/today/select-actions";
+import { NEEDS_REVIEW_QUEUE_HREF, needsReviewFlow } from "@/lib/copy-needs-review";
 import { todayCopy } from "@/lib/copy-today";
 
 /**
@@ -41,6 +42,13 @@ export function NeedsReviewStrip({ summary }: { summary: NeedsReviewSummary }) {
         >
           ({summary.count})
         </span>
+        <Link
+          href={NEEDS_REVIEW_QUEUE_HREF}
+          aria-label={needsReviewFlow.queue.seeAllLabel}
+          className="underline underline-offset-4"
+        >
+          {needsReviewFlow.queue.seeAll}
+        </Link>
       </p>
     </section>
   );

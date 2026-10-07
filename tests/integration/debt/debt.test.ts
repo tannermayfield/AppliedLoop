@@ -73,6 +73,27 @@ describe("learning debt (Needs Review)", () => {
     expect(second.nextCursor).toBeNull();
   });
 
+  it("filters by concept: the item a concept page and the resolve prompts look up", async () => {
+    const { alice, open, planned, resolved } = await seed();
+    const idsFor = async (conceptId: string, status?: "RESOLVED") =>
+      (await listDebt(alice.ctx, { conceptId, status })).items.map((item) => item.id);
+    expect(await idsFor(open.conceptId)).toEqual([open.id]);
+    expect(await idsFor(planned.conceptId)).toEqual([planned.id]);
+    // The default queue is OPEN + PLANNED, so a resolved concept has no open item…
+    expect(await idsFor(resolved.conceptId)).toEqual([]);
+    // …and asking for resolved ones finds it.
+    expect(await idsFor(resolved.conceptId, "RESOLVED")).toEqual([resolved.id]);
+  });
+
+  it("a concept filter never reaches another student's concept, and a bad id is a 400", async () => {
+    const { open } = await seed();
+    const bob = await app.makeUser();
+    expect((await listDebt(bob.ctx, { conceptId: open.conceptId })).items).toEqual([]);
+    await expect(listDebt(bob.ctx, { conceptId: "not-a-uuid" })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
   it("never lists another user's debt", async () => {
     await seed();
     const bob = await app.makeUser();

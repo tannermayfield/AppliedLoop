@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { getDebt, OPEN_DEBT_STATUSES, type DebtDto } from "@/domain/learning/debt";
 import { inTransaction, type AppContext } from "@/lib/context";
-import { EXTRACTION_ERRORS } from "@/lib/copy-extraction";
+import { EXTRACTION_ERRORS, NEEDS_REVIEW_ITEM } from "@/lib/copy-extraction";
 import {
   conceptProgress,
   concepts,
@@ -114,12 +114,14 @@ export async function classifyItem(
       if (effect.kind === "ENSURE_CONCEPT") {
         conceptId = await ensureConcept(tx, item.name, item.normalizedName);
       } else if (effect.kind === "OPEN_DEBT") {
-        debtId = await openDebt(tx, {
-          conceptId: conceptId!,
-          projectId,
-          sessionId,
-          itemId: item.id,
-        });
+        debtId = (
+          await openDebt(tx, {
+            conceptId: conceptId!,
+            projectId,
+            sessionId,
+            itemId: item.id,
+          })
+        ).id;
       } else {
         debtId = await dismissDebt(tx, item.id);
       }
@@ -149,8 +151,17 @@ export async function classifyItem(
   });
 }
 
-/** The caller's concept with this normalized name, created (EXPOSED, no source) when missing. */
-async function ensureConcept(c: AppContext, name: string, normalizedName: string): Promise<string> {
+/**
+ * The caller's concept with this normalized name, created (EXPOSED, no source) when missing.
+ * `via` is only the telemetry label: an extraction candidate, or the student typing a concept into
+ * Needs Review by hand (domain/learning/needs-review.ts). Never touches an existing concept's stage.
+ */
+export async function ensureConcept(
+  c: AppContext,
+  name: string,
+  normalizedName: string,
+  via: "EXTRACTION" | "MANUAL" = "EXTRACTION",
+): Promise<string> {
   const now = c.now();
   const [created] = await c.db
     .insert(concepts)
@@ -164,7 +175,7 @@ async function ensureConcept(c: AppContext, name: string, normalizedName: string
     await emit(c, "concept_captured", {
       entityType: "concept",
       entityId: created.id,
-      metadata: { via: "EXTRACTION", edited_before_confirm: false },
+      metadata: { via, edited_before_confirm: false },
     });
     return created.id;
   }
@@ -175,13 +186,29 @@ async function ensureConcept(c: AppContext, name: string, normalizedName: string
   return requireRow(existing, "Concept").id;
 }
 
-/** Open a debt item for the concept, or return the OPEN/PLANNED one it already has. */
-async function openDebt(
+/** Where a Needs Review item came from. Everything but the concept is optional context. */
+export interface DebtLink {
+  conceptId: string;
+  projectId: string | null;
+  /** The Build session whose extraction raised it (null when the student added it by hand). */
+  sessionId: string | null;
+  /** The extraction candidate the student classified (null when added by hand). */
+  itemId: string | null;
+  /** The student's own note, when they wrote one. */
+  notes?: string;
+}
+
+/**
+ * Open a debt item for the concept, or return the OPEN/PLANNED one it already has (`created` says
+ * which). Called only because the student chose it: "Add to Needs Review" on a candidate, or the
+ * manual form. Emits `learning_debt_created` once per item actually created.
+ */
+export async function openDebt(
   c: AppContext,
-  link: { conceptId: string; projectId: string; sessionId: string; itemId: string },
-): Promise<string> {
+  link: DebtLink,
+): Promise<{ id: string; created: boolean }> {
   const existing = await activeDebtFor(c, link.conceptId);
-  if (existing) return existing;
+  if (existing) return { id: existing, created: false };
   const now = c.now();
   const [created] = await c.db
     .insert(learningDebtItems)
@@ -192,14 +219,19 @@ async function openDebt(
       sourceSessionId: link.sessionId,
       extractionItemId: link.itemId,
       status: "OPEN",
+      notes: link.notes ?? "",
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoNothing()
     .returning({ id: learningDebtItems.id });
-  if (!created) return requireRow(await activeDebtFor(c, link.conceptId), "Needs Review item");
+  // A simultaneous request created it first: hand back that one.
+  if (!created) {
+    const id = requireRow(await activeDebtFor(c, link.conceptId), NEEDS_REVIEW_ITEM);
+    return { id, created: false };
+  }
   await emit(c, "learning_debt_created", { entityType: "learning_debt", entityId: created.id });
-  return created.id;
+  return { id: created.id, created: true };
 }
 
 async function activeDebtFor(c: AppContext, conceptId: string): Promise<string | null> {

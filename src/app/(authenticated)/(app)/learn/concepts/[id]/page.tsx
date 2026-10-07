@@ -9,14 +9,18 @@ import { ConceptSkills } from "@/components/learning/concept-skills";
 import { orNotFound } from "@/components/learning/or-not-found";
 import { StageMenu } from "@/components/learning/stage-menu";
 import { StageTimeline } from "@/components/learning/stage-timeline";
+import { ConceptNeedsReview } from "@/components/needs-review/concept-needs-review";
+import { NeedsReviewBadge } from "@/components/needs-review/needs-review-badge";
 import { listEvidence } from "@/domain/evidence/evidence";
 import { getConcept } from "@/domain/learning/concepts";
+import { listDebt } from "@/domain/learning/debt";
 import { listSkills } from "@/domain/learning/skills";
 import { listSources } from "@/domain/learning/sources";
 import { getMe } from "@/domain/identity/me";
 import { getPageContext } from "@/lib/app-context";
 import { evidenceCopy } from "@/lib/copy-evidence";
 import { STAGE_DESCRIPTIONS, learnCopy } from "@/lib/copy-learning";
+import { needsReviewFlow } from "@/lib/copy-needs-review";
 
 export const metadata: Metadata = { title: "Concept" };
 
@@ -52,26 +56,35 @@ export default async function ConceptPage({ params }: { params: Promise<{ id: st
     listSkills(c),
   ]);
   // Only reached for the caller's own concept (getConcept above 404s otherwise).
-  const evidence = await listEvidence(c, { conceptId: concept.id, limit: 50 });
+  const [evidence, openDebt] = await Promise.all([
+    listEvidence(c, { conceptId: concept.id, limit: 50 }),
+    // The concept's OPEN or PLANNED Needs Review item, if the student added it there.
+    listDebt(c, { conceptId: concept.id, limit: 1 }).then((page) => page.items[0] ?? null),
+  ]);
   const initialStage = concept.history[0]?.fromStage ?? concept.stage;
+  // Practice it where it came up when we know (the same link the Needs Review list uses).
+  const applyHref = `/apply/new?conceptId=${concept.id}${openDebt?.projectId ? `&projectId=${openDebt.projectId}` : ""}`;
 
   return (
     <>
       <PageHeader
         eyebrow={
-          <Link
-            href="/learn"
-            className="hover:text-foreground inline-flex items-center gap-1 underline-offset-4 hover:underline"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            {copy.back}
-          </Link>
+          <span className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/learn"
+              className="hover:text-foreground inline-flex items-center gap-1 underline-offset-4 hover:underline"
+            >
+              <ArrowLeft className="size-3.5" aria-hidden />
+              {copy.back}
+            </Link>
+            {openDebt && <NeedsReviewBadge />}
+          </span>
         }
         title={concept.name}
         description={concept.sourceTitle ?? undefined}
         actions={
           <Button asChild>
-            <Link href={`/apply/new?conceptId=${concept.id}`}>
+            <Link href={applyHref}>
               <Target aria-hidden />
               {copy.startApply}
             </Link>
@@ -80,6 +93,16 @@ export default async function ConceptPage({ params }: { params: Promise<{ id: st
       />
 
       <div className="max-w-2xl space-y-6">
+        {openDebt && (
+          <Section id="needs-review-heading" title={needsReviewFlow.concept.heading}>
+            <ConceptNeedsReview
+              debtId={openDebt.id}
+              conceptName={concept.name}
+              projectName={openDebt.projectName}
+            />
+          </Section>
+        )}
+
         <Section id="stage-heading" title={copy.stageHeading}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="text-muted-foreground max-w-sm text-sm text-pretty">

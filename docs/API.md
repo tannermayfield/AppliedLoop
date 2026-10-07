@@ -51,7 +51,7 @@ Use UUIDs, UTC ISO-8601 timestamps, server-side schema validation, cursor pagina
 
 ## API surface
 
-**v0** marks the experimental v0 scope; **P1** is the GitHub integration (deferred; v0 takes pasted repository URLs and artifact links); **v1** marks the account and privacy controls added after v0 (owner-approved 2026-10-06 under SPEC §6: "expose deletion controls").
+**v0** marks the experimental v0 scope; **P1** is the GitHub integration (deferred; v0 takes pasted repository URLs and artifact links); **v1** marks what was added after v0: the account and privacy controls (owner-approved 2026-10-06 under SPEC §6: "expose deletion controls") and the v1 close-out additions, the manual way into Needs Review and search (SPEC §3 Extraction, SPEC §2 P1 "Search/filter"; see "Needs Review and search (v1 close-out)" below).
 
 | Method | Endpoint | v0 | Main request | Main response |
 |---|---|---|---|---|
@@ -85,8 +85,10 @@ Use UUIDs, UTC ISO-8601 timestamps, server-side schema validation, cursor pagina
 | POST | `/build/:sessionId/context-pack` | ✔ | options | Portable agent context |
 | POST | `/extractions` | ✔ | build session ID | Extraction |
 | PATCH | `/extractions/:id/items/:itemId` | ✔ | understanding/disposition | Classified item |
-| GET | `/learning-debt` | ✔ | status/project | Queue |
+| GET | `/learning-debt` | ✔ | status/project/concept | Queue |
+| POST | `/learning-debt` | v1 | concept name or id, project?, notes? | Item (created, or the one that already existed) |
 | PATCH | `/learning-debt/:id` | ✔ | status/priority | Item |
+| GET | `/search` | v1 | q, limit | Matches grouped by concepts, projects, evidence, sessions |
 | GET | `/evidence` | ✔ | skill/project/concept | Evidence collection |
 | POST | `/evidence` | ✔ | artifact/explanation/relationships | Evidence |
 | GET | `/evidence/:id` | ✔ | — | Detail |
@@ -314,6 +316,67 @@ Duplicate concept or rename clash → `details: { existingConceptId }`; duplicat
 | `POST /events` | 202 `{ data: { accepted: true } }`; body `{ name, entityType?, entityId?, metadata? (under 2 KB) }`; `name` must be a client event. |
 
 KPI SQL lives in `scripts/kpi/` (see its README); the page `/evidence/[id]/edit` reuses the evidence form.
+
+## Needs Review and search (v1 close-out, 2026-10-07)
+
+Added by the journeys audit follow-up (findings F-07, F-08, F-13 to F-16). The UI says "Needs Review"; the API says `learning_debt`. Nothing here lets AI or the system create, resolve or reorder anything: every change below is the student's own request.
+
+### `POST /learning-debt`: add a concept to Needs Review by hand
+
+The manual twin of "Add to Needs Review" on an extraction candidate (R-10), for when AI is off or the extraction failed. It reuses the same helpers: the concept is found or created and an `OPEN` item is opened, in **one transaction**.
+
+```json
+POST /api/v1/learning-debt
+
+{ "conceptName": "Database transactions", "projectId": "uuid", "notes": "optional" }
+```
+
+| Field | Rules |
+|---|---|
+| `conceptName` | 1 to 120 characters after trimming, with at least one letter or number. Matched to the caller's concepts by normalized name (R-14); a concept that is not found is created at stage `EXPOSED` with no source (`concept_captured`, `via: MANUAL`). An existing concept's stage is never touched. |
+| `conceptId` | Instead of `conceptName`: one of the caller's own concepts. **Exactly one** of the two is required (`400` otherwise). |
+| `projectId` | Optional, the project it came up in. Must be the caller's (`404` otherwise). |
+| `notes` | Optional, at most 2,000 characters. |
+
+Response `{ "data": { "debt": DebtItem, "created": boolean } }` where `DebtItem` is the same shape `GET /learning-debt` returns (`source_session_id` and `extraction_item_id` are `null` for a manual add).
+
+| Status | When |
+|---|---|
+| `201` | A new `OPEN` item was created. Emits `learning_debt_created` (and `concept_captured` if the concept was new). |
+| `200` | The concept already had an `OPEN` or `PLANNED` item (one open item per concept): that item is returned, `created: false`, nothing is written and nothing is emitted. Safe to repeat or double-submit. |
+| `400 VALIDATION_ERROR` | Neither or both of `conceptName`/`conceptId`; a blank or punctuation-only name; over-long text; a malformed id. `details.issues[].path` names the field. |
+| `404 NOT_FOUND` | `conceptId` or `projectId` is not the caller's, or does not exist. Nothing is created, not even the concept a name would have made. |
+
+### `GET /learning-debt?conceptId=`
+
+New filter: only this concept's items (default status filter unchanged: `OPEN` and `PLANNED`). This is how a concept page, the Apply completion card and the evidence cards find "is this concept in Needs Review?" before asking the student whether to mark it resolved (`PATCH /learning-debt/:id` with `{ "status": "RESOLVED" }`, emitting `learning_debt_resolved`, only after the student confirms). A malformed id is `400`; a concept that is not the caller's matches nothing (`200`, empty).
+
+### `GET /search?q=&limit=`
+
+One ownership-scoped, bounded search over the caller's own records (SPEC §2 P1 "Search/filter"). Read-only; nothing is stored or emitted.
+
+| Param | Rules |
+|---|---|
+| `q` | Required, 1 to 80 characters after trimming. Matched case-insensitively and **literally**: `%`, `_` and `\` are ordinary characters, never wildcards. |
+| `limit` | Optional, 1 to 25 results **per group**, default 10. |
+
+| Group | Fields searched | Result item |
+|---|---|---|
+| `concepts` | name, description, notes | `{ id, name, stage, sourceTitle, snippet }` |
+| `projects` | name, description (archived projects included) | `{ id, name, status, snippet }` |
+| `evidence` | title, explanation | `{ id, title, projectId, projectName, snippet }` |
+| `sessions` | goal | `{ id, type, status, goal, projectName, conceptName }` |
+
+Response `{ "data": { "query", "limit", "concepts": { "items", "hasMore" }, "projects": {…}, "evidence": {…}, "sessions": {…} } }`. A title or name match sorts before a match only in the body, then newest first. `hasMore` means that group had more than `limit` matches (the UI tells the student to be more specific). `snippet` is the first matching description, note or explanation, flattened and cut to about 140 characters around the match, or `null` when only the title matched. Nothing matching is four empty groups, not an error. A blank or oversized `q`, or a `limit` outside 1 to 25, is `400 VALIDATION_ERROR`. Another student's records never appear in any group.
+
+### `GET /concepts?search=` now also reads notes
+
+`search` (up to 80 characters, literal) matches a concept's **name, description or notes**; it was name and description. It backs the filter box on Learn (`/learn?q=`).
+
+### Pages
+
+`/search?q=` renders the same search on the server, and the box in the app frame (desktop sidebar, phone top bar) opens it. The Needs Review queue is rendered on the server on `/learn` (anchor `#needs-review`, linked from Today's strip as "See all") and on a project's Learning tab. These are UI changes only; they use the endpoints above and `GET /learning-debt`.
+
 ## Account and privacy (v1 build, 2026-10-06)
 
 Owner-approved on 2026-10-06 under SPEC §6 ("expose deletion controls", "account deletion removes or anonymizes user-owned data"); see the SPEC_REVIEW resolution log. Both endpoints act only on the signed-in caller: no user id or email in the request selects whose data is read or removed. The UI is `/settings` (account menu → Settings).

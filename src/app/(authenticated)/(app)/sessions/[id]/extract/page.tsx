@@ -103,7 +103,12 @@ export default async function ExtractPage({ params }: { params: Promise<{ id: st
           )}
         </section>
 
-        {(!extraction || extraction.items.length === 0) && <ManualConceptAdd />}
+        {/* Always available: with AI off or a failed review it is the only way in, and under a
+            populated review it adds a concept the AI missed ("Add another concept"). */}
+        <ManualConceptAdd
+          projectId={session.project.id}
+          hasCandidates={(extraction?.items.length ?? 0) > 0}
+        />
       </div>
     </>
   );

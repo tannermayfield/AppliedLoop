@@ -6,29 +6,42 @@ import { CheckCircle2, Pin, PinOff, Target } from "lucide-react";
 import { api } from "@/components/sessions/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { DebtDto } from "@/domain/learning/debt";
 import { NEEDS_REVIEW_COPY } from "@/lib/copy-extraction";
+import type { DebtPriority } from "@/lib/db/schema/enums";
 import { cn } from "@/lib/utils";
+import { pinnedFirst } from "./order";
 
 const t = NEEDS_REVIEW_COPY;
 
-/** Pinned items first, then newest first (the server's order). */
-function ordered(items: DebtDto[]): DebtDto[] {
-  return [...items.filter((item) => item.pinned), ...items.filter((item) => !item.pinned)];
+/**
+ * One queue row as plain strings and booleans: this crosses from a server component to this client
+ * one, so it carries no dates, no functions and nothing else a render could choke on.
+ */
+export interface NeedsReviewItem {
+  id: string;
+  conceptId: string;
+  conceptName: string;
+  projectId: string | null;
+  projectName: string | null;
+  priority: DebtPriority;
+  pinned: boolean;
 }
+
+/** Pinned items first, then newest first (the server's order). */
+const ordered = pinnedFirst;
 
 export function NeedsReviewItems({
   items: initial,
   showProject,
 }: {
-  items: DebtDto[];
+  items: NeedsReviewItem[];
   showProject: boolean;
 }) {
   const [items, setItems] = useState(initial);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState("");
 
-  async function patch(item: DebtDto, body: { pinned?: boolean; status?: "RESOLVED" }) {
+  async function patch(item: NeedsReviewItem, body: { pinned?: boolean; status?: "RESOLVED" }) {
     setBusy(item.id);
     const before = items;
     // Optimistic: resolving removes the row; pinning toggles it.
@@ -37,7 +50,7 @@ export function NeedsReviewItems({
         ? current.filter((row) => row.id !== item.id)
         : current.map((row) => (row.id === item.id ? { ...row, ...body } : row)),
     );
-    const result = await api<DebtDto>(`/api/v1/learning-debt/${item.id}`, {
+    const result = await api(`/api/v1/learning-debt/${item.id}`, {
       method: "PATCH",
       body,
     });

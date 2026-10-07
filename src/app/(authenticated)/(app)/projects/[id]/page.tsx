@@ -3,7 +3,8 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { orNotFound } from "@/components/learning/or-not-found";
-import { NeedsReviewList } from "@/components/needs-review/needs-review-list";
+import { topNeedsReview } from "@/components/needs-review/order";
+import { NeedsReviewSection } from "@/components/needs-review/needs-review-section";
 import { LearningTab } from "@/components/projects/learning-tab";
 import { OverviewTab } from "@/components/projects/overview-tab";
 import { ProjectHeaderActions } from "@/components/projects/project-header-actions";
@@ -17,9 +18,11 @@ import { getMe } from "@/domain/identity/me";
 import { getIntegrations } from "@/domain/integrations/github/integration";
 import { getProjectRepository } from "@/domain/integrations/github/repositories";
 import { listConcepts } from "@/domain/learning/concepts";
+import { listDebt } from "@/domain/learning/debt";
 import { listSkills } from "@/domain/learning/skills";
 import { listContextVersions } from "@/domain/projects/context";
 import { getProjectSummary } from "@/domain/projects/projects";
+import { recommendApply } from "@/domain/today/today";
 import { getPageContext } from "@/lib/app-context";
 
 export const metadata: Metadata = { title: "Project" };
@@ -72,16 +75,27 @@ export default async function ProjectPage({
           github={(await getIntegrations(c)).github}
           repository={await getProjectRepository(c, id)}
           githubNotice={parseGitHubNotice(query.github)}
+          recommended={await recommendApply(c, id)}
+          needsReviewTop={
+            summary.needsReviewCount === 0
+              ? []
+              : topNeedsReview((await listDebt(c, { projectId: id, limit: 100 })).items, 3).map(
+                  (item) => ({ conceptId: item.conceptId, name: item.conceptName }),
+                )
+          }
         />
       )}
       {tab === "learning" && (
         <div className="space-y-8">
+          {/* The queue is rendered once, on the server, above the linked concepts. */}
+          <NeedsReviewSection
+            items={(await listDebt(c, { projectId: id, limit: 100 })).items}
+            showProject={false}
+          />
           <LearningTab
             projectId={project.id}
             concepts={(await listConcepts(c, { projectId: id, limit: 100 })).items}
-            needsReviewCount={summary.needsReviewCount}
           />
-          <NeedsReviewList projectId={project.id} />
         </div>
       )}
       {tab === "evidence" && <EvidenceTab projectId={project.id} />}

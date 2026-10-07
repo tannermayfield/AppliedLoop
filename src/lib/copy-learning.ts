@@ -53,6 +53,18 @@ export const learnCopy = {
     viewExisting: "View it",
   },
 
+  /** The filter above the concept list (a plain GET form: /learn?q=). */
+  search: {
+    label: "Search your concepts",
+    placeholder: "Name, description or notes",
+    submit: "Search",
+    clear: "Clear search",
+    count: (count: number, query: string) =>
+      `${plural(count, "1 concept matches", `${count} concepts match`)} “${query}”.`,
+    noneTitle: (query: string) => `No concepts match “${query}”`,
+    noneBody: "Try a shorter or different word. Search reads names, descriptions and your notes.",
+  },
+
   empty: {
     title: "Nothing captured yet",
     description:
@@ -84,6 +96,11 @@ export const learnCopy = {
   row: {
     apply: "Apply",
     applyLabel: (name: string) => `Apply "${name}" in a project`,
+    // From Applied on: look at the evidence, or practice it again somewhere else.
+    practice: "Practice",
+    practiceLabel: (name: string) => `Practice "${name}" again in a project`,
+    viewEvidence: "View evidence",
+    viewEvidenceLabel: (name: string) => `View evidence for "${name}"`,
     addedOn: (date: string) => `Added ${date}`,
   },
 

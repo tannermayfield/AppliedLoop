@@ -140,7 +140,7 @@ const emptyAsUndefined = <T extends z.ZodType>(schema: T) =>
 export const listConceptsQuery = pageQuerySchema.extend({
   learningSourceId: emptyAsUndefined(z.guid()),
   stage: emptyAsUndefined(z.enum(CONCEPT_STAGES)),
-  /** Part of the name or description, case-insensitive. */
+  /** Part of the name, description or the student's notes, case-insensitive. */
   search: z
     .string()
     .trim()
@@ -377,7 +377,13 @@ export async function listConcepts(c: AppContext, raw: ListConceptsQuery = {}) {
   if (query.stage) conditions.push(eq(conceptProgress.stage, query.stage));
   if (query.search) {
     const pattern = `%${escapeLike(query.search)}%`;
-    conditions.push(or(ilike(concepts.name, pattern), ilike(concepts.description, pattern))!);
+    conditions.push(
+      or(
+        ilike(concepts.name, pattern),
+        ilike(concepts.description, pattern),
+        ilike(concepts.notes, pattern),
+      )!,
+    );
   }
   if (query.projectId) {
     const [project] = await c.db

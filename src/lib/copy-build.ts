@@ -1,5 +1,6 @@
 // Product wording for Build mode (docs/ENGINEERING.md → UI). Calm, specific, honest. Build is the
 // "AI acceleration allowed" mode; the mode badge itself comes from MODE_COPY in ./copy.
+import { copy } from "./copy";
 
 /** Build summary and artifact limits, shared by the server and the form. */
 export const BUILD_LIMITS = {
@@ -104,7 +105,7 @@ export const BUILD_COPY = {
     delete: "Delete session",
     deleteTitle: "Delete this Build session?",
     deleteBody:
-      "This permanently deletes the session with its notes, summary and any potential concepts from its review. Concepts you already added to Needs Review stay.",
+      `This permanently deletes the session with its notes, summary and any potential concepts from its review. Concepts you already added to ${copy.needsReview.label} stay.`,
     cancel: "Cancel",
   },
 

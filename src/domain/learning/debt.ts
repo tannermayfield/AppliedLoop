@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "@/lib/context";
-import { EXTRACTION_ERRORS } from "@/lib/copy-extraction";
+import { EXTRACTION_ERRORS, NEEDS_REVIEW_ITEM } from "@/lib/copy-extraction";
 import { concepts, learningDebtItems, projects } from "@/lib/db/schema";
 import {
   DEBT_PRIORITIES,
@@ -84,17 +84,22 @@ function toDto(row: DebtJoinRow): DebtDto {
 
 /** One debt item of the caller's, as a DTO. NOT_FOUND for others' ids (and malformed ids). */
 export async function getDebt(c: AppContext, debtId: string): Promise<DebtDto> {
-  requireRow(UUID.test(debtId) ? debtId : null, "Needs Review item");
+  requireRow(UUID.test(debtId) ? debtId : null, NEEDS_REVIEW_ITEM);
   const [row] = await selectDebt(c).where(
     and(eq(learningDebtItems.id, debtId), ownedBy(learningDebtItems.userId, c.auth)),
   );
-  return toDto(requireRow(row, "Needs Review item"));
+  return toDto(requireRow(row, NEEDS_REVIEW_ITEM));
 }
 
 export const listDebtQuery = pageQuerySchema.extend({
   /** Omitted → the active queue (OPEN and PLANNED). */
   status: z.enum(DEBT_STATUSES).optional(),
   projectId: z.guid().optional(),
+  /**
+   * Only this concept's items: how a concept page, the Apply completion card and the evidence cards
+   * find "is this concept in Needs Review?". A concept that is not the caller's matches nothing.
+   */
+  conceptId: z.guid().optional(),
 });
 export type ListDebtQuery = z.input<typeof listDebtQuery>;
 
@@ -111,6 +116,7 @@ export async function listDebt(
       : inArray(learningDebtItems.status, OPEN_DEBT_STATUSES),
   ];
   if (query.projectId) conditions.push(eq(learningDebtItems.projectId, query.projectId));
+  if (query.conceptId) conditions.push(eq(learningDebtItems.conceptId, query.conceptId));
   if (query.cursor) {
     const after = decodeCursor(query.cursor, timeIdCursorSchema);
     const at = new Date(after.t);

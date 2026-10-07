@@ -1,3 +1,4 @@
+import { copy } from "./copy";
 import type { ProjectStatus } from "./db/schema/enums";
 
 // Wording for the Projects pages and the onboarding "what are you building" step. Part of the
@@ -39,7 +40,7 @@ export const CONTEXT_FIELDS = [
     key: "summary",
     label: "Summary",
     hint: "What the project is, and who it's for.",
-    placeholder: "Personalized language practice based on what each learner has mastered.",
+    placeholder: "Personalized language practice that adapts to each learner's progress.",
   },
   {
     key: "architecture",
@@ -67,8 +68,6 @@ export const CONTEXT_FIELDS = [
   },
 ] as const;
 export type ContextFieldKey = (typeof CONTEXT_FIELDS)[number]["key"];
-
-const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
 export const projectsCopy = {
   title: "Projects",
@@ -168,8 +167,16 @@ export const projectsCopy = {
     resumeHeading: "A session is in progress",
     resume: "Resume",
     recentEvidenceHeading: "Recent evidence",
-    needsReview: (count: number) => `${count} to review`,
+    // The wireframe's "Recommended application" block: the concept Today would suggest, in this project.
+    recommendedHeading: "Recommended application",
+    recommendedBody: (project: string) => `Practice it inside ${project}.`,
+    recommendedLabel: (concept: string, project: string) =>
+      `Start an Apply session for ${concept} in ${project}`,
+    // Up to three Needs Review concept names, then a link to the whole queue on the Learning tab.
+    needsReviewHeading: copy.needsReview.label,
+    needsReviewMore: (count: number) => `and ${count} more`,
     needsReviewLink: "See the Learning tab",
+    needsReviewConcept: (name: string) => `Open ${name}`,
   },
 
   details: {
@@ -219,11 +226,6 @@ export const projectsCopy = {
   learning: {
     heading: "What you've learned that this project uses",
     description: "Concepts that share a skill with this project.",
-    needsReviewHeading: "Needs Review",
-    needsReviewCount: (count: number) =>
-      `${count} ${plural(count, "item", "items")} from this project's builds`,
-    needsReviewHint:
-      "Items you add to Needs Review appear on Today when it's time to practice them.",
     empty: {
       title: "No linked concepts yet",
       description:

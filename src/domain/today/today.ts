@@ -13,9 +13,10 @@ import {
   projects,
   sessions,
 } from "@/lib/db/schema";
-import { ownedBy } from "@/lib/ownership";
+import { ownedBy, requireRow } from "@/lib/ownership";
 import { emit } from "@/lib/telemetry/emit";
 import { getMe } from "@/domain/identity/me";
+import { idOrNotFound } from "@/domain/learning/skills";
 import { TODAY_CONFIG } from "./config";
 import {
   selectTodayActions,
@@ -81,6 +82,44 @@ export async function getToday(c: AppContext): Promise<TodayView> {
     needsReview: summarizeNeedsReview(data.debt),
     ...flags,
   };
+}
+
+// ── A project's recommended application ─────────────────────────────────────────────────────────
+
+export type ApplyRecommendation = Extract<TodayCard, { type: "APPLY" }>;
+
+/**
+ * The project page's "Recommended application [Start Apply]": the APPLY card Today would show if
+ * this were the student's only project. It runs the SAME pure ranking as Today (`selectTodayActions`,
+ * APPLY only), so there is one rule: the most recent concept below Applied inside the recency
+ * window, paired with this project. Null when the project is not ACTIVE (Today never suggests
+ * paused, complete or archived projects) or nothing qualifies. Someone else's project, or an id
+ * that cannot exist, is NOT_FOUND.
+ */
+export async function recommendApply(
+  c: AppContext,
+  projectId: string,
+): Promise<ApplyRecommendation | null> {
+  const id = idOrNotFound(projectId, "Project");
+  const [owned] = await c.db
+    .select({ id: projects.id, status: projects.status })
+    .from(projects)
+    .where(and(eq(projects.id, id), ownedBy(projects.userId, c.auth)));
+  if (requireRow(owned, "Project").status !== "ACTIVE") return null;
+
+  const now = c.now();
+  const [conceptRows, activeProjects] = await Promise.all([
+    loadRecentConcepts(c, now),
+    loadActiveProjects(c),
+  ]);
+  const project = activeProjects.find((row) => row.id === id);
+  if (!project) return null;
+
+  const [card] = selectTodayActions(
+    { now, sessions: [], debt: [], concepts: conceptRows, projects: [project] },
+    { ...TODAY_CONFIG, order: ["APPLY"], maxCardsPerType: 1 },
+  );
+  return card?.type === "APPLY" ? card : null;
 }
 
 // ── Client events (`POST /events`) ──────────────────────────────────────────────────────────────

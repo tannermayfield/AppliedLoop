@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { Target } from "lucide-react";
+import { BadgeCheck, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ConceptDto } from "@/domain/learning/concepts";
 import { learnCopy } from "@/lib/copy-learning";
 import { formatDate } from "./format";
+import { rowActionsFor } from "./row-actions";
 import { StageMenu } from "./stage-menu";
 
 interface Props {
@@ -14,13 +15,17 @@ interface Props {
   showSource?: boolean;
 }
 
-/** One concept in a list: its name, a little context, the stage control and the Apply button. */
+/**
+ * One concept in a list: its name, a little context, the stage control and the next step that fits
+ * its stage: Apply below Applied; View evidence and Practice from Applied on.
+ */
 export function ConceptRow({ concept, timeZone, showSource = false }: Props) {
   const details = [
     learnCopy.row.addedOn(formatDate(concept.capturedAt, { timeZone })),
     ...(showSource && concept.sourceTitle ? [concept.sourceTitle] : []),
     ...concept.skills.map((skill) => skill.name),
   ];
+  const applyHref = `/apply/new?conceptId=${concept.id}`;
 
   return (
     <li className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -33,7 +38,7 @@ export function ConceptRow({ concept, timeZone, showSource = false }: Props) {
         </Link>
         <p className="text-muted-foreground text-sm text-pretty">{details.join(" · ")}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         {/* Remounted when the stage changes on the server, so its local state never goes stale. */}
         <StageMenu
           key={`${concept.id}-${concept.stage}`}
@@ -41,15 +46,33 @@ export function ConceptRow({ concept, timeZone, showSource = false }: Props) {
           conceptName={concept.name}
           stage={concept.stage}
         />
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link
-            href={`/apply/new?conceptId=${concept.id}`}
-            aria-label={learnCopy.row.applyLabel(concept.name)}
-          >
-            <Target aria-hidden />
-            {learnCopy.row.apply}
-          </Link>
-        </Button>
+        {rowActionsFor(concept.stage).map((action) =>
+          action === "viewEvidence" ? (
+            <Button key={action} asChild variant="outline" size="sm" className="self-start">
+              <Link
+                href={`/evidence?conceptId=${concept.id}`}
+                aria-label={learnCopy.row.viewEvidenceLabel(concept.name)}
+              >
+                <BadgeCheck aria-hidden />
+                {learnCopy.row.viewEvidence}
+              </Link>
+            </Button>
+          ) : (
+            <Button key={action} asChild variant="outline" size="sm" className="self-start">
+              <Link
+                href={applyHref}
+                aria-label={
+                  action === "practice"
+                    ? learnCopy.row.practiceLabel(concept.name)
+                    : learnCopy.row.applyLabel(concept.name)
+                }
+              >
+                <Target aria-hidden />
+                {action === "practice" ? learnCopy.row.practice : learnCopy.row.apply}
+              </Link>
+            </Button>
+          ),
+        )}
       </div>
     </li>
   );
