@@ -1,4 +1,5 @@
-import type { ApplyTutorInput } from "@/prompts/apply/v1";
+import { CODE_LINES_ALLOWED } from "@/domain/sessions/apply/leakage";
+import type { ApplyTutorInput } from "@/prompts/apply/v2";
 import { ADAPTIVE_LANGUAGE, CTE } from "../data";
 
 // Shared Apply-tutor inputs. Not a fixture file (no default export of fixtures).
@@ -17,7 +18,7 @@ export const CTE_CHALLENGE: ApplyTutorInput["challenge"] = {
 /** Signature snippets of the reference solution (a full GROUP BY aggregate over the table). */
 export const CTE_SOLUTION_SIGNATURE = ["group by learner_id, skill_id", "avg(score) as"];
 
-const ALLOWED = [3, 3, 8, 15];
+const ALLOWED = CODE_LINES_ALLOWED;
 
 export function applyInput(
   messages: ApplyTutorInput["messages"],

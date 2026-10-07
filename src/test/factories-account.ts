@@ -176,7 +176,7 @@ export async function insertRichAccount(app: TestApp, user: TestUser): Promise<R
     purpose: "TUTOR",
     provider: "scripted",
     model: "scripted-tutor",
-    promptVersion: "apply/v1",
+    promptVersion: "apply/v2",
     inputHash: secrets.promptHash,
     outputJson: { note: `Parsed answer ${marker}` },
     inputTokens: 10,

@@ -283,7 +283,7 @@ describe("AT-22 persistence audit", () => {
       .filter(({ column }) => /prompt|system|payload|raw|request|response|completion/i.test(column))
       .map(({ table, column }) => `${table}.${column}`);
 
-    // `prompt_version` is the version label of a prompt ("apply/v1"), not its text.
+    // `prompt_version` is the version label of a prompt ("apply/v2"), not its text.
     expect(suspicious).toEqual(["ai_runs.prompt_version"]);
   });
 

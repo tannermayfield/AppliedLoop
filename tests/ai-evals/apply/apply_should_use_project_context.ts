@@ -7,7 +7,7 @@ const fixtures: ApplyFixture[] = [
   {
     category: "apply_should_use_project_context",
     name: "a nudge that names the project's own parts",
-    promptVersion: "apply/v1",
+    promptVersion: "apply/v2",
     input: applyInput(
       [
         { role: "USER", content: "I think I'd start from the attempts data." },

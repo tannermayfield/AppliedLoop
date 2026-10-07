@@ -1,6 +1,7 @@
 import type { extractionItems } from "@/lib/db/schema";
 import type { ArtifactType, ExtractionDisposition, UserUnderstanding } from "@/lib/db/schema/enums";
 import { normalizeConceptName } from "@/lib/normalize";
+import { claimsAboutStudent } from "@/lib/student-claims";
 
 /** One candidate as the API returns it. Model-written and student-written fields stay separate. */
 export interface ExtractionItemDto {
@@ -80,21 +81,9 @@ const MAX = {
   refs: 6,
 } as const;
 
-/**
- * Text that addresses what the student does or doesn't understand or know. Extraction may never
- * say this (CLAUDE.md: "Never claim to know what the student does or does not understand").
- */
-const STUDENT_CLAIMS = [
-  /\byou (do not|don't|dont|lack|failed to|fail to|did not|didn't)( yet)? (fully )?understand/i,
-  /\byou (probably |clearly |likely )?(don't|do not|dont|did not|didn't) know\b/i,
-  /\byou lack\b/i,
-  /\byour (lack of|gap|gaps|weakness|weaknesses|misunderstanding)\b/i,
-  /\b(the )?(student|user|learner)( probably| clearly| likely)? (does not|doesn't|did not|didn't|lacks?|may not|might not) (fully )?(understand|know)/i,
-];
-
-export function claimsAboutStudent(text: string): boolean {
-  return STUDENT_CLAIMS.some((pattern) => pattern.test(text));
-}
+// What counts as a claim about the student's understanding lives in one place (also used to screen
+// Apply tutor replies): src/lib/student-claims.ts. Extraction may never say any of it.
+export { claimsAboutStudent };
 
 /** The text, or "" when it makes a claim about the student's understanding. */
 export function withoutStudentClaims(text: string): string {

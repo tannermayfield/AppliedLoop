@@ -4,7 +4,8 @@ import { GatewayAiProvider } from "@/lib/ai/gateway";
 import type { AiProvider, ModelRequest, PromptSpec } from "@/lib/ai/types";
 import { loadEnv } from "@/lib/env";
 import { looksLikeSolutionLeak } from "@/domain/sessions/apply/leakage";
-import { applyTutorPrompt, type ApplyTutorInput } from "@/prompts/apply/v1";
+import { claimsAboutStudent } from "@/lib/student-claims";
+import { applyTutorPrompt, type ApplyTutorInput } from "@/prompts/apply/v2";
 import {
   opportunityPrompt,
   type OpportunityOutput,
@@ -49,11 +50,19 @@ export interface OpportunityFixture {
   };
 }
 
+export type ObservationType = "CORRECT_REASONING" | "MISCONCEPTION" | "PROGRESS";
+
 export interface ApplyFixture {
   category: string;
   name: string;
   promptVersion: string;
   input: ApplyTutorInput;
+  /**
+   * Needs a real model: a canned demo reply cannot judge a student's code, so the default run
+   * (`pnpm test`) skips it and `pnpm eval` (AI_EVAL_LIVE=1) runs it. The assertions themselves are
+   * still proven able to fail by the negative controls in harness.test.ts.
+   */
+  liveOnly?: boolean;
   expect: {
     /** Signature snippets of the reference solution; the leak check always runs too. */
     forbiddenSubstrings?: string[];
@@ -61,6 +70,13 @@ export interface ApplyFixture {
     mentionsAll?: RegExp[];
     /** ...and at least one of these. */
     mentionsAny?: RegExp[];
+    /** Observation types the reply must / must not contain (AT-09: reviewing an attempt). */
+    observations?: { include?: ObservationType[]; exclude?: ObservationType[] };
+    /**
+     * The review must name the specific defect: the reply or a MISCONCEPTION observation matches
+     * at least one of these (AT-09: "known-bad" attempts).
+     */
+    namesDefect?: RegExp[];
   };
 }
 
@@ -92,12 +108,36 @@ export async function runApplyFixture(
       leaked = true;
       failures.push(`solution leak: ${verdict.reasons.join(" ")}`);
     }
+    // CLAUDE.md: never claim to know what the student does or does not understand. Checked on
+    // every Apply fixture, not only the ones about mastery.
+    if (claimsAboutStudent(text)) {
+      failures.push("reply makes a claim about what the student understands or has mastered");
+    }
     for (const pattern of fixture.expect.mentionsAll ?? []) {
       if (!pattern.test(text)) failures.push(`reply does not match ${pattern}`);
     }
     const any = fixture.expect.mentionsAny;
     if (any && !any.some((pattern) => pattern.test(text))) {
       failures.push(`reply matches none of ${any.join(", ")}`);
+    }
+    const types = output.observations.map((observation) => observation.type);
+    for (const type of fixture.expect.observations?.include ?? []) {
+      if (!types.includes(type)) failures.push(`expected a ${type} observation`);
+    }
+    for (const type of fixture.expect.observations?.exclude ?? []) {
+      if (types.includes(type)) failures.push(`unexpected ${type} observation`);
+    }
+    const defect = fixture.expect.namesDefect;
+    if (defect) {
+      const named = [
+        text,
+        ...output.observations
+          .filter((observation) => observation.type === "MISCONCEPTION")
+          .map((observation) => observation.description),
+      ].join("\n");
+      if (!defect.some((pattern) => pattern.test(named))) {
+        failures.push(`the review does not name the defect (${defect.join(", ")})`);
+      }
     }
   }
   return { category: fixture.category, name: fixture.name, passed: failures.length === 0, failures, leaked };

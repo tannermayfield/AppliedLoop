@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CODE_LINES_ALLOWED, looksLikeSolutionLeak } from "@/domain/sessions/apply/leakage";
 import { demoTutor } from "@/lib/ai/demo/tutor";
 import type { ModelRequest } from "@/lib/ai/types";
-import { applyTutorPrompt, tutorOutputSchema, type ApplyTutorInput } from "@/prompts/apply/v1";
+import { applyTutorPrompt, tutorOutputSchema, type ApplyTutorInput } from "@/prompts/apply/v2";
 
 const base: ApplyTutorInput = {
   concept: {

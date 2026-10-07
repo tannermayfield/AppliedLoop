@@ -249,6 +249,7 @@ Server-emitted unless marked *(client)*. Every event carries `user_id`, an `enti
 | `apply_session_started` | APPLY session created | `concept_stage_at_start` | Apply completion, North star |
 | `apply_hint_requested` | hint level raised | `level` | Apply behavior |
 | `apply_leakage_suspected` | leakage heuristic fires on a tutor reply | `hint_level` | Apply leakage rate |
+| `apply_claim_suspected` | a tutor reply claims what the student does or doesn't understand (screened and rewritten, never shown) | `hint_level`, `attempt` | Product-rule guardrail health |
 | `apply_mode_switched_to_build` | switch action | — | Apply behavior |
 | `apply_session_completed` | APPLY completed | `duration_s`, `hint_level` | Apply completion, North star |
 | `concept_stage_changed` | stage confirmed | `from`, `to`, `source: USER \| APPLY_COMPLETION \| EVIDENCE` | Learn→Apply conversion, Time to transfer |

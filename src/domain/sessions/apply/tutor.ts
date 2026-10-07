@@ -12,8 +12,9 @@ import { sessionMessages } from "@/lib/db/schema";
 import { CONCEPT_STAGES, type ConceptStage } from "@/lib/db/schema/enums";
 import { AiDisabledForProjectError, ConflictError, parseOrThrow } from "@/lib/errors";
 import { ownedBy } from "@/lib/ownership";
+import { claimsAboutStudent } from "@/lib/student-claims";
 import { emit } from "@/lib/telemetry/emit";
-import { applyTutorPrompt, type ApplyTutorInput, type TutorOutput } from "@/prompts/apply/v1";
+import { applyTutorPrompt, type ApplyTutorInput, type TutorOutput } from "@/prompts/apply/v2";
 import {
   loadOwnedConcept,
   loadOwnedOpportunity,
@@ -32,11 +33,12 @@ import { CODE_LINES_ALLOWED, looksLikeSolutionLeak } from "./leakage";
 //   1. Load the session; only an ACTIVE session whose PERSISTED type is APPLY gets a tutor, and
 //      never for a project with AI turned off.
 //   2. Save the student's message first, so a provider failure loses nothing (AT-20).
-//   3. Ask the model with the apply/v1 prompt (outside any transaction), passing the SERVER-held
+//   3. Ask the model with the apply/v2 prompt (outside any transaction), passing the SERVER-held
 //      hint level; project text and the thread travel as untrusted data.
 //   4. Clamp a reply that claims a higher hint level than the student unlocked, and record it.
-//   5. Run the leak check on the reply. If it fires: record `apply_leakage_suspected` and ask once
-//      more with a reminder; if it fires again, discard the model text and use a safe fallback.
+//   5. Run the leak check and the student-claim check on the reply. If either fires: record
+//      `apply_leakage_suspected` / `apply_claim_suspected` and ask once more with a reminder; if it
+//      fires again, discard the model text and use a safe fallback.
 //   6. Save the reply with its metadata.
 //   7. Model errors propagate (AiUnavailable / AiInvalidOutput / RateLimited); the student's
 //      message is already saved and the session stays resumable.
@@ -53,7 +55,10 @@ export const tutorMessageInput = z.object({
     .string()
     .trim()
     .min(1, SESSION_VALIDATION.messageEmpty)
-    .max(SESSION_LIMITS.maxMessageChars, SESSION_VALIDATION.tooLong(SESSION_LIMITS.maxMessageChars)),
+    .max(
+      SESSION_LIMITS.maxMessageChars,
+      SESSION_VALIDATION.tooLong(SESSION_LIMITS.maxMessageChars),
+    ),
 });
 export type TutorMessageInput = z.input<typeof tutorMessageInput>;
 
@@ -88,18 +93,21 @@ export async function tutorReply(
 
   // Steps 4 and 5 (the clamp happens inside `ask`).
   const leakReasons: string[] = [];
+  let claimSuspected = false;
   let verdict = leakCheck(attempt.output, session.hintLevel);
-  if (verdict.leaked) {
-    leakReasons.push(...verdict.reasons);
-    await reportLeak(c, session, 1);
+  if (verdict.rejected) {
+    leakReasons.push(...verdict.leakReasons);
+    claimSuspected ||= verdict.claim;
+    await reportRejection(c, session, 1, verdict);
     attempt = await ask(c, { ...input, reminder: true }, session);
     verdict = leakCheck(attempt.output, session.hintLevel);
-    if (verdict.leaked) {
-      leakReasons.push(...verdict.reasons);
-      await reportLeak(c, session, 2);
+    if (verdict.rejected) {
+      leakReasons.push(...verdict.leakReasons);
+      claimSuspected ||= verdict.claim;
+      await reportRejection(c, session, 2, verdict);
     }
   }
-  const fallback = verdict.leaked;
+  const fallback = verdict.rejected;
   const leakageSuspected = leakReasons.length > 0;
 
   // Step 6.
@@ -115,6 +123,7 @@ export async function tutorReply(
     ...(attempt.clamped && { clamped: true, claimedHintLevel: attempt.claimedHintLevel }),
     ...(fallback && { fallback: true }),
     ...(leakageSuspected && { leakageSuspected: true, leakReasons }),
+    ...(claimSuspected && { claimSuspected: true }),
   };
   const content = fallback
     ? TUTOR_FALLBACK.message(session.hintLevel < SESSION_LIMITS.maxHintLevel)
@@ -211,7 +220,10 @@ async function buildPromptInput(
       const question = dto.tutor?.nextQuestion;
       return {
         role: row.role,
-        content: question && !row.content.includes(question) ? `${row.content}\n\n${question}` : row.content,
+        content:
+          question && !row.content.includes(question)
+            ? `${row.content}\n\n${question}`
+            : row.content,
       };
     }),
     reminder: false,
@@ -237,20 +249,40 @@ async function ask(c: AppContext, input: ApplyTutorInput, session: SessionRow): 
   };
 }
 
-/** Everything the student would read is checked, against the SERVER-held level. */
-function leakCheck(output: TutorOutput, hintLevel: number) {
-  return looksLikeSolutionLeak({
-    reply: `${output.coachMessage}\n\n${output.nextQuestion}`,
-    hintLevel,
-  });
+interface ReplyVerdict {
+  /** Too much code or a finished solution (the solution-leak check). */
+  leak: boolean;
+  /** A claim about what the student does or doesn't understand (CLAUDE.md product rule). */
+  claim: boolean;
+  /** Either: the reply is not shown. */
+  rejected: boolean;
+  /** Why the leak check fired (empty when it did not). Claims are reported separately. */
+  leakReasons: string[];
 }
 
-async function reportLeak(c: AppContext, session: SessionRow, attempt: number): Promise<void> {
-  await emit(c, "apply_leakage_suspected", {
-    entityType: "session",
-    entityId: session.id,
-    metadata: { hint_level: session.hintLevel, attempt },
-  });
+/** Everything the student would read is checked, against the SERVER-held level. */
+function leakCheck(output: TutorOutput, hintLevel: number): ReplyVerdict {
+  const reply = `${output.coachMessage}\n\n${output.nextQuestion}`;
+  const leak = looksLikeSolutionLeak({ reply, hintLevel });
+  const claim = claimsAboutStudent(reply);
+  return {
+    leak: leak.leaked,
+    claim,
+    rejected: leak.leaked || claim,
+    leakReasons: leak.reasons,
+  };
+}
+
+async function reportRejection(
+  c: AppContext,
+  session: SessionRow,
+  attempt: number,
+  verdict: ReplyVerdict,
+): Promise<void> {
+  const metadata = { hint_level: session.hintLevel, attempt };
+  const base = { entityType: "session", entityId: session.id, metadata };
+  if (verdict.leak) await emit(c, "apply_leakage_suspected", base);
+  if (verdict.claim) await emit(c, "apply_claim_suspected", base);
 }
 
 /** Restate the model's question only if it is a short, single-line, code-free question. */

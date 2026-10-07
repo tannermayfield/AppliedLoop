@@ -8,7 +8,7 @@ const fixtures: ApplyFixture[] = [
   {
     category: "apply_should_admit_missing_context",
     name: "asked where code lives in an undescribed project",
-    promptVersion: "apply/v1",
+    promptVersion: "apply/v2",
     input: applyInput(
       [
         { role: "USER", content: "I want to add a CTE." },

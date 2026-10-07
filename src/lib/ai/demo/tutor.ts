@@ -1,4 +1,4 @@
-import type { ApplyTutorInput, TutorOutput } from "../../../prompts/apply/v1";
+import type { ApplyTutorInput, TutorOutput } from "../../../prompts/apply/v2";
 import type { DemoHandler } from "./types";
 
 // Demo Apply tutor: deterministic templates, no network. It obeys the same product rules as the

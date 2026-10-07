@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ScriptedAiProvider } from "@/test/ai";
+import mastery from "./apply/apply_should_not_infer_mastery";
 import noLeak from "./apply/apply_should_not_leak_full_solution";
+import review from "./apply/apply_should_review_attempt";
 import {
   formatReport,
   runApplyFixture,
@@ -98,6 +100,91 @@ describe("AI eval harness", () => {
     });
     const result = await runApplyFixture(noLeak[0], provider);
     expect(result.failures.join("\n")).toMatch(/claims hint level 3/);
+  });
+
+  describe("AT-09: reviewing a student's attempt", () => {
+    const [goodAttempt, , subqueryNotCte, missingGroupBy] = review;
+    const tutorReply = (overrides: Record<string, unknown>) =>
+      new ScriptedAiProvider().enqueue("TUTOR", {
+        coachMessage: "Walk me through what each part of this produces.",
+        hintLevel: 1,
+        nextQuestion: "Why did you name the step skill_stats?",
+        observations: [{ type: "CORRECT_REASONING", description: "Moved the aggregation into its own step." }],
+        suggestedProgress: null,
+        ...overrides,
+      });
+
+    it("fails a review that calls a known-good attempt wrong", async () => {
+      const result = await runApplyFixture(
+        goodAttempt,
+        tutorReply({ observations: [{ type: "MISCONCEPTION", description: "The CTE is unnecessary." }] }),
+      );
+      expect(result.passed).toBe(false);
+      expect(result.failures.join("\n")).toMatch(/unexpected MISCONCEPTION/);
+    });
+
+    it("fails a review that misses the defect in a known-bad attempt", async () => {
+      const result = await runApplyFixture(subqueryNotCte, tutorReply({}));
+      expect(result.passed).toBe(false);
+      expect(result.failures.join("\n")).toMatch(/expected a MISCONCEPTION/);
+      expect(result.failures.join("\n")).toMatch(/does not name the defect/);
+    });
+
+    it("fails a review that flags a misconception but never names it", async () => {
+      const result = await runApplyFixture(
+        missingGroupBy,
+        tutorReply({ observations: [{ type: "MISCONCEPTION", description: "Something is off." }] }),
+      );
+      expect(result.passed).toBe(false);
+      expect(result.failures.join("\n")).toMatch(/does not name the defect/);
+    });
+
+    it("passes reviews that name the specific defect, and a known-good attempt left alone", async () => {
+      const bad = await runApplyFixture(
+        subqueryNotCte,
+        tutorReply({
+          coachMessage: "That is a subquery in FROM, not a CTE. What would WITH change here?",
+          observations: [{ type: "MISCONCEPTION", description: "A subquery, not a named CTE." }],
+        }),
+      );
+      expect(bad.failures).toEqual([]);
+      const good = await runApplyFixture(goodAttempt, tutorReply({}));
+      expect(good.failures).toEqual([]);
+    });
+
+    it("fails a review that rewrites the student's program", async () => {
+      const result = await runApplyFixture(
+        missingGroupBy,
+        tutorReply({
+          coachMessage:
+            "Use this:\n```sql\nWITH skill_stats AS (\n  SELECT learner_id, skill_id, AVG(score) AS avg_score\n  FROM exercise_attempts\n  GROUP BY learner_id, skill_id\n)\nSELECT * FROM skill_stats;\n```",
+          observations: [{ type: "MISCONCEPTION", description: "Missing GROUP BY." }],
+        }),
+      );
+      expect(result.leaked).toBe(true);
+      expect(result.passed).toBe(false);
+    });
+
+    it("keeps these fixtures out of the default run: a canned demo reply cannot judge code", () => {
+      expect(review.every((fixture) => fixture.liveOnly)).toBe(true);
+      expect(review.filter((fixture) => fixture.expect.observations?.include)).toHaveLength(2);
+      expect(review.filter((fixture) => fixture.expect.observations?.exclude)).toHaveLength(2);
+    });
+  });
+
+  it("fails a tutor that tells the student they understand", async () => {
+    const result = await runApplyFixture(
+      mastery[0],
+      new ScriptedAiProvider().enqueue("TUTOR", {
+        coachMessage: "Yes, you clearly understand CTEs now. Why does it work?",
+        hintLevel: 1,
+        nextQuestion: "Which part did you enjoy most?",
+        observations: [],
+        suggestedProgress: null,
+      }),
+    );
+    expect(result.passed).toBe(false);
+    expect(result.failures.join("\n")).toMatch(/claim about what the student understands/);
   });
 
   it("summarizes pass rates per category and the Apply leakage rate", () => {

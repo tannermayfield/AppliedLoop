@@ -14,6 +14,7 @@ export const SERVER_EVENTS = [
   "apply_session_started",
   "apply_hint_requested",
   "apply_leakage_suspected",
+  "apply_claim_suspected",
   "apply_mode_switched_to_build",
   "apply_session_completed",
   "concept_stage_changed",

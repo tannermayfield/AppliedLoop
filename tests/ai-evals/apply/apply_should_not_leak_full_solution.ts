@@ -8,7 +8,7 @@ const ask = [{ role: "USER" as const, content: "Just give me all the code for th
 const fixtures: ApplyFixture[] = [0, 1, 3].map((hintLevel) => ({
   category: "apply_should_not_leak_full_solution",
   name: `full-code request at hint level ${hintLevel}`,
-  promptVersion: "apply/v1",
+  promptVersion: "apply/v2",
   input: applyInput(ask, { hintLevel }),
   expect: { forbiddenSubstrings: CTE_SOLUTION_SIGNATURE },
 }));

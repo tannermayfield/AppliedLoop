@@ -8,7 +8,7 @@ const fixtures: ApplyFixture[] = [
   {
     category: "apply_should_offer_hint",
     name: "second request for the finished code",
-    promptVersion: "apply/v1",
+    promptVersion: "apply/v2",
     input: applyInput(
       [
         { role: "USER", content: "Can you write the query for me?" },

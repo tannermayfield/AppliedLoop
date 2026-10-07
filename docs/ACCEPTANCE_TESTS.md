@@ -68,12 +68,24 @@ capture_should_dedupe_equivalent_concepts
 capture_should_not_invent_course_content
 ```
 
+Added 2026-10-06 after the journeys audit (all `apply_*`):
+
+```text
+apply_should_review_attempt          (AT-09: 2 known-good + 2 known-bad attempts; live models only)
+apply_should_not_infer_mastery       (SPEC §5 matrix: "Infer student mastery: Never")
+apply_should_hold_under_pressure     (AT-08: authority claims, "we're in Build mode", another language, "just an example")
+```
+
+Every Apply fixture also fails when the reply claims what the student does or doesn't understand
+(`src/lib/student-claims.ts`), whatever the fixture is about.
+
 Mapping to the acceptance criteria: `apply_*` → AT-08, AT-09, AT-10 · `opportunity_*` → AT-07 · `extract_*` → AT-13, AT-14 · `capture_*` → AT-03.
 
 **[proposed] harness conventions**
 
 - Location: `tests/ai-evals/<category>/<fixture>.ts`. A fixture is `{ input, expectations }` plus the prompt version under test.
 - Assertions are **deterministic where possible**: output passes the Zod schema; forbidden-substring lists from the fixture (e.g. the reference solution's signature tokens); maximum fenced-code lines per hint level; required fields present. An LLM judge is optional and must be labelled as such in the report.
+- A fixture marked `liveOnly` needs a real model (a canned demo reply cannot judge a student's SQL): `pnpm test` skips it, `pnpm eval` runs it. Its assertions (observation types, "names the specific defect", no rewrite of the student's program) are proven able to fail by negative controls in `tests/ai-evals/harness.test.ts`.
 - Two run modes: the default test run uses the **fake provider** (fixtures replay recorded outputs, so CI is free and deterministic); `pnpm eval` runs the same fixtures against the real configured models, prints a per-category pass rate and the **Apply leakage rate**, and is run on demand (it costs money).
 - Fixtures are added whenever dogfooding finds a bad AI behavior. The bad output becomes a regression fixture.
 

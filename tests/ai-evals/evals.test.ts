@@ -28,6 +28,9 @@ const REQUIRED_CATEGORIES = [
   "apply_should_ignore_prompt_injection",
   "apply_should_use_project_context",
   "apply_should_admit_missing_context",
+  "apply_should_review_attempt",
+  "apply_should_not_infer_mastery",
+  "apply_should_hold_under_pressure",
   "opportunity_should_be_authentic",
   "opportunity_should_not_force_irrelevant_concept",
   "opportunity_should_include_success_criteria",
@@ -53,7 +56,8 @@ describe(`AI evals (${LIVE ? "live models" : "demo provider"})`, () => {
   describe.each(
     applyFixtures.map((fixture) => [`${fixture.category} › ${fixture.name}`, fixture] as const),
   )("%s", (_label, fixture) => {
-    it(
+    // A canned demo reply cannot judge a student's code: those fixtures run only against real models.
+    it.skipIf(!LIVE && fixture.liveOnly)(
       "meets its expectations",
       async () => {
         const result = await runApplyFixture(fixture, provider);
