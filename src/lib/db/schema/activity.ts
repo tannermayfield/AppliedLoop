@@ -37,6 +37,7 @@ import {
   userUnderstandingEnum,
 } from "./enums";
 import { users } from "./identity";
+import { githubArtifacts } from "./integrations";
 
 // What the student does over time: AI calls, practice, sessions, extraction, debt, evidence,
 // telemetry. Several of these reference each other (ai_runs ↔ sessions ↔ practice_opportunities),
@@ -291,6 +292,13 @@ export const evidenceItems = pgTable(
     explanation: text("explanation").notNull().default(""),
     artifactType: artifactTypeEnum("artifact_type").notNull().default("NOTE"),
     artifactUrl: text("artifact_url"),
+    /**
+     * The GitHub item this evidence was picked from (P1), if any. SET NULL: removing the artifact
+     * never removes the student's explanation or the copied `artifact_url` (AT-16).
+     */
+    githubArtifactId: uuid("github_artifact_id").references(() => githubArtifacts.id, {
+      onDelete: "set null",
+    }),
     contributionType: contributionTypeEnum("contribution_type").notNull().default("MIXED_UNSURE"),
     visibility: evidenceVisibilityEnum("visibility").notNull().default("PRIVATE"),
     createdAt: createdAt(),
@@ -299,6 +307,7 @@ export const evidenceItems = pgTable(
   (t) => [
     index("evidence_user_created_idx").on(t.userId, t.createdAt.desc()),
     index("evidence_project_idx").on(t.projectId),
+    index("evidence_github_artifact_idx").on(t.githubArtifactId),
   ],
 );
 

@@ -5,6 +5,7 @@ import { EvidenceForm } from "@/components/evidence/evidence-form";
 import { orNotFound } from "@/components/learning/or-not-found";
 import { PageHeader } from "@/components/page-header";
 import { getEvidence } from "@/domain/evidence/evidence";
+import { listPickableRepositories } from "@/domain/integrations/github/repositories";
 import { listConcepts } from "@/domain/learning/concepts";
 import { listSkills } from "@/domain/learning/skills";
 import { getPageContext } from "@/lib/app-context";
@@ -15,10 +16,11 @@ export const metadata: Metadata = { title: "Edit evidence" };
 export default async function EditEvidencePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const c = await getPageContext();
-  const [evidence, conceptPage, catalog] = await Promise.all([
+  const [evidence, conceptPage, catalog, githubRepos] = await Promise.all([
     orNotFound(getEvidence(c, id)),
     listConcepts(c, { limit: 100 }),
     listSkills(c),
+    listPickableRepositories(c),
   ]);
   // Keep concepts that are already linked selectable even if they fall outside the first page.
   const concepts = new Map(conceptPage.items.map((concept) => [concept.id, concept.name]));
@@ -44,6 +46,7 @@ export default async function EditEvidencePage({ params }: { params: Promise<{ i
         projects={[{ id: evidence.project.id, name: evidence.project.name }]}
         concepts={[...concepts].map(([cid, name]) => ({ id: cid, name }))}
         catalog={catalog}
+        githubRepos={githubRepos}
         initial={{
           projectId: evidence.projectId,
           sessionId: evidence.sessionId,

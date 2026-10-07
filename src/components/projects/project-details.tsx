@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, apiRequest } from "@/components/learning/api-client";
+import { githubCopy } from "@/lib/copy-integrations";
 import { requestCopy } from "@/lib/copy-learning";
 import { projectsCopy } from "@/lib/copy-projects";
 import type { ProjectStatus } from "@/lib/db/schema/enums";
@@ -25,6 +26,8 @@ interface Props {
     repoUrl: string | null;
     status: ProjectStatus;
   };
+  /** A GitHub repository is linked (P1): the address mirrors it and changes by (un)linking. */
+  repoLinked?: boolean;
 }
 
 const overview = projectsCopy.overview;
@@ -40,7 +43,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /** Why the project exists, what it is built with, where its code lives, and its status. */
-export function ProjectDetails({ project }: Props) {
+export function ProjectDetails({ project, repoLinked = false }: Props) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(project.name);
@@ -176,9 +179,17 @@ export function ProjectDetails({ project }: Props) {
               onChange={(event) => setRepoUrl(event.target.value)}
               placeholder={projectsCopy.form.repoPlaceholder}
               maxLength={300}
+              readOnly={repoLinked}
               aria-invalid={Boolean(fieldErrors.repoUrl)}
-              aria-describedby={fieldErrors.repoUrl ? "details-repo-error" : undefined}
+              aria-describedby={
+                fieldErrors.repoUrl ? "details-repo-error" : repoLinked ? "details-repo-hint" : undefined
+              }
             />
+            {repoLinked && (
+              <p id="details-repo-hint" className="text-muted-foreground text-xs">
+                {githubCopy.repository.linkedHint}
+              </p>
+            )}
             {fieldErrors.repoUrl && (
               <p id="details-repo-error" role="alert" className="text-destructive text-sm">
                 {fieldErrors.repoUrl}

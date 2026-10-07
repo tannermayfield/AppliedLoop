@@ -26,6 +26,11 @@ export const SERVER_EVENTS = [
   "learning_debt_resolved",
   "evidence_created",
   "ai_run_failed",
+  // P1 GitHub integration
+  "integration_connected",
+  "integration_disconnected",
+  "repository_linked",
+  "github_artifact_attached",
 ] as const;
 
 /** The only events the browser may report through `POST /api/v1/events`. */

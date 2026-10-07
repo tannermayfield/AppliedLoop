@@ -11,6 +11,7 @@
 ---
 
 > **Status:** draft for owner approval, Day 0, 2026-10-05.
+> **Update 2026-10-06:** the owner approved building v1 (P0 + P1). P1 GitHub repository linking and artifact selection is implemented (AT-18, AT-19) behind optional `GITHUB_APP_*` env vars; registering the GitHub App is an owner action ([integrations/github-app.md](integrations/github-app.md)). `lib/integrations/` (below) is no longer empty.
 > **Inputs:** [SPEC](SPEC.md) · [DATA_MODEL](DATA_MODEL.md) · [API](API.md) · [ACCEPTANCE_TESTS](ACCEPTANCE_TESTS.md) · [SPEC_REVIEW](SPEC_REVIEW.md) · [ADRs](decisions/).
 > This plan changes no product behavior. Where a task relies on a **proposed** amendment it says so (`R-xx`). It contains no code on purpose: exact code needs the stack and the amendments to be final.
 

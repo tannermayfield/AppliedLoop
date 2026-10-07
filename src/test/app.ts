@@ -5,6 +5,7 @@ import { seedSharedSkills } from "../lib/db/seed-skills";
 import { userProfiles, users } from "../lib/db/schema";
 import { ScriptedAiProvider } from "./ai";
 import { createTestDb, type TestDb } from "./db";
+import { FakeGitHubClient } from "./github";
 
 export interface TestUser {
   id: string;
@@ -23,6 +24,8 @@ export interface TestClock {
 export interface TestApp {
   db: Db;
   ai: ScriptedAiProvider;
+  /** The GitHub double every user's ctx shares (P1). */
+  github: FakeGitHubClient;
   clock: TestClock;
   makeUser(overrides?: { name?: string; email?: string; admin?: boolean }): Promise<TestUser>;
   /** Insert the shared skill catalog (SQL, JavaScript, …). */
@@ -45,6 +48,7 @@ export interface TestApp {
 export async function createTestApp(): Promise<TestApp> {
   const testDb: TestDb = await createTestDb();
   const ai = new ScriptedAiProvider();
+  const github = new FakeGitHubClient();
   let current = new Date("2026-10-06T15:00:00.000Z");
   const clock: TestClock = {
     now: () => new Date(current),
@@ -60,6 +64,7 @@ export async function createTestApp(): Promise<TestApp> {
   return {
     db: testDb.db,
     ai,
+    github,
     clock,
     async makeUser(overrides = {}) {
       counter += 1;
@@ -78,6 +83,7 @@ export async function createTestApp(): Promise<TestApp> {
           auth: { userId: row.id, email, roles: [overrides.admin ? "ADMIN" : "STUDENT"] },
           db: testDb.db,
           ai,
+          github,
           now: clock.now,
         },
       };
@@ -88,6 +94,7 @@ export async function createTestApp(): Promise<TestApp> {
     reset: async () => {
       await testDb.reset();
       ai.calls.length = 0;
+      github.reset();
     },
     close: () => testDb.close(),
   };

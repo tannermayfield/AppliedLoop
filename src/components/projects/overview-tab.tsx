@@ -3,10 +3,14 @@ import { ModeBadge } from "@/components/mode-badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime } from "@/components/learning/format";
 import type { SkillOption } from "@/components/learning/skill-picker";
+import { RepositoryCard } from "@/components/integrations/repository-card";
+import type { GitHubConnectionDto } from "@/domain/integrations/github/integration";
+import type { ProjectRepositoryDto } from "@/domain/integrations/github/repositories";
 import type { ContextSnapshotDto } from "@/domain/projects/context";
 import type { ProjectSummaryDto } from "@/domain/projects/projects";
 import { copy } from "@/lib/copy";
 import { projectsCopy } from "@/lib/copy-projects";
+import type { GitHubConnectNotice } from "@/lib/integrations/github/types";
 import { AiToggle } from "./ai-toggle";
 import { ContextEditor } from "./context-editor";
 import { MilestoneEditor } from "./milestone-editor";
@@ -21,9 +25,21 @@ interface Props {
   versions: ContextSnapshotDto[];
   catalog: SkillOption[];
   timeZone: string;
+  /** P1 GitHub: connection status, the linked repository, and the `?github=` notice. */
+  github: GitHubConnectionDto;
+  repository: ProjectRepositoryDto | null;
+  githubNotice: GitHubConnectNotice | null;
 }
 
-export function OverviewTab({ summary, versions, catalog, timeZone }: Props) {
+export function OverviewTab({
+  summary,
+  versions,
+  catalog,
+  timeZone,
+  github,
+  repository,
+  githubNotice,
+}: Props) {
   const { project } = summary;
   return (
     <div className="max-w-2xl space-y-6">
@@ -50,7 +66,13 @@ export function OverviewTab({ summary, versions, catalog, timeZone }: Props) {
       )}
 
       <MilestoneEditor projectId={project.id} milestone={project.currentMilestone} />
-      <ProjectDetails project={project} />
+      <ProjectDetails project={project} repoLinked={repository !== null} />
+      <RepositoryCard
+        projectId={project.id}
+        github={github}
+        repository={repository}
+        notice={githubNotice}
+      />
       <ProjectSkills projectId={project.id} skills={summary.skills} catalog={catalog} />
 
       {(summary.recentEvidence.length > 0 || summary.needsReviewCount > 0) && (

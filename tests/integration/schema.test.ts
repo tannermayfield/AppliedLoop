@@ -10,10 +10,15 @@ import {
   evidenceSkills,
   extractionItems,
   extractions,
+  githubArtifacts,
+  githubConnectStates,
+  githubRepositories,
+  integrations,
   learningDebtItems,
   learningSources,
   progressEvents,
   projectContextSnapshots,
+  projectRepositories,
   projects,
   sessionMessages,
   sessions,
@@ -28,6 +33,13 @@ import {
   insertSkill,
   insertSource,
 } from "@/test/factories";
+import {
+  insertGitHubArtifact,
+  insertGitHubRepository,
+  insertIntegration,
+  insertLinkedProject,
+  linkProjectRepository,
+} from "@/test/factories-github";
 import { createTestApp, type TestApp } from "@/test/app";
 import {
   PG_CHECK_VIOLATION,
@@ -161,6 +173,97 @@ describe("schema constraints", () => {
     expect(total).toBe(SHARED_SKILLS.length);
   });
 
+  describe("GitHub integration (P1)", () => {
+    it("keeps one live GitHub connection per student, and disconnected ones as history", async () => {
+      const [alice, bob] = [await app.makeUser(), await app.makeUser()];
+      const first = await insertIntegration(app.db, alice.id, { installationId: 1 });
+      expect(await codeOf(insertIntegration(app.db, alice.id, { installationId: 2 }))).toBe(
+        PG_UNIQUE_VIOLATION,
+      );
+      // The same installation may be connected by another student (e.g. a shared organization).
+      await expect(insertIntegration(app.db, bob.id, { installationId: 1 })).resolves.toBeDefined();
+
+      await app.db
+        .update(integrations)
+        .set({ status: "DISCONNECTED" })
+        .where(eq(integrations.id, first.id));
+      await expect(
+        insertIntegration(app.db, alice.id, { installationId: 2 }),
+      ).resolves.toBeDefined();
+      // One row per student and installation: reconnecting reuses the old row.
+      expect(
+        await codeOf(insertIntegration(app.db, alice.id, { installationId: 1, status: "DISCONNECTED" })),
+      ).toBe(PG_UNIQUE_VIOLATION);
+    });
+
+    it("links at most one repository per project, while a repository may serve several projects", async () => {
+      const alice = await app.makeUser();
+      const { project, integration, repository } = await insertLinkedProject(app.db, alice.id);
+      const other = await insertGitHubRepository(app.db, alice.id, integration.id, {
+        externalRepoId: 202,
+        fullName: "octo-student/other",
+      });
+      expect(
+        await codeOf(
+          app.db
+            .insert(projectRepositories)
+            .values({ projectId: project.id, repositoryId: other.id }),
+        ),
+      ).toBe(PG_UNIQUE_VIOLATION);
+      const second = await insertProject(app.db, alice.id);
+      await expect(
+        app.db
+          .insert(projectRepositories)
+          .values({ projectId: second.id, repositoryId: repository.id }),
+      ).resolves.toBeDefined();
+    });
+
+    it("mirrors a repository once per connection and an artifact once per repository and type", async () => {
+      const alice = await app.makeUser();
+      const { integration, repository } = await insertLinkedProject(app.db, alice.id);
+      expect(
+        await codeOf(insertGitHubRepository(app.db, alice.id, integration.id)),
+      ).toBe(PG_UNIQUE_VIOLATION);
+      await insertGitHubArtifact(app.db, alice.id, repository.id);
+      expect(await codeOf(insertGitHubArtifact(app.db, alice.id, repository.id))).toBe(
+        PG_UNIQUE_VIOLATION,
+      );
+      await expect(
+        insertGitHubArtifact(app.db, alice.id, repository.id, { type: "PR", externalId: "12" }),
+      ).resolves.toBeDefined();
+    });
+
+    it("removing a GitHub artifact keeps the evidence, its link and the explanation (AT-16)", async () => {
+      const alice = await app.makeUser();
+      const { project, repository } = await insertLinkedProject(app.db, alice.id);
+      const artifact = await insertGitHubArtifact(app.db, alice.id, repository.id);
+      const [evidence] = await app.db
+        .insert(evidenceItems)
+        .values({
+          userId: alice.id,
+          projectId: project.id,
+          title: "CTE refactor",
+          explanation: "My own words about the CTE.",
+          artifactType: "COMMIT",
+          artifactUrl: artifact.url,
+          githubArtifactId: artifact.id,
+        })
+        .returning();
+
+      await app.db.delete(githubArtifacts).where(eq(githubArtifacts.id, artifact.id));
+
+      const [after] = await app.db
+        .select()
+        .from(evidenceItems)
+        .where(eq(evidenceItems.id, evidence.id));
+      expect(after).toMatchObject({
+        githubArtifactId: null,
+        explanation: "My own words about the CTE.",
+        artifactUrl: artifact.url,
+      });
+    });
+  });
+
   it("deleting a user removes everything they own, despite the cross-table foreign keys", async () => {
     const alice = await app.makeUser();
     const bob = await app.makeUser();
@@ -202,6 +305,15 @@ describe("schema constraints", () => {
         projectId: project.id,
         extractionItemId: item.id,
       });
+    const integration = await insertIntegration(app.db, alice.id);
+    const repository = await insertGitHubRepository(app.db, alice.id, integration.id);
+    await linkProjectRepository(app.db, project.id, repository);
+    const artifact = await insertGitHubArtifact(app.db, alice.id, repository.id);
+    await app.db.insert(githubConnectStates).values({
+      nonceHash: "hash",
+      userId: alice.id,
+      expiresAt: new Date("2026-10-06T16:00:00.000Z"),
+    });
     const [evidence] = await app.db
       .insert(evidenceItems)
       .values({
@@ -209,6 +321,7 @@ describe("schema constraints", () => {
         projectId: project.id,
         sessionId: apply.id,
         title: "CTE refactor",
+        githubArtifactId: artifact.id,
       })
       .returning();
     await app.db
@@ -248,6 +361,10 @@ describe("schema constraints", () => {
       progressEvents,
       eventLog,
       aiRuns,
+      integrations,
+      githubRepositories,
+      githubArtifacts,
+      githubConnectStates,
     ]) {
       const [{ n }] = await app.db
         .select({ n: count() })
@@ -257,6 +374,11 @@ describe("schema constraints", () => {
         0,
       );
     }
+    const [{ links }] = await app.db
+      .select({ links: count() })
+      .from(projectRepositories)
+      .where(eq(projectRepositories.projectId, project.id));
+    expect(links).toBe(0);
     // Another user's data is untouched.
     const [stillThere] = await app.db.select().from(concepts).where(eq(concepts.id, bobConcept.id));
     expect(stillThere).toBeDefined();

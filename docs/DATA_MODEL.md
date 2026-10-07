@@ -106,10 +106,10 @@ Legend for the **v0** column:
 | `evidence_items` | ✔ | `id`, `user_id`, `project_id`, `session_id nullable`, `title`, `description`, `explanation`, `artifact_type`, `artifact_url`, `contribution_type`, `visibility`, timestamp | Private by default |
 | `evidence_concepts` | ✔ | `evidence_id`, `concept_id` | Many-to-many |
 | `evidence_skills` | ✔ | `evidence_id`, `skill_id` | Many-to-many |
-| `integrations` | P1 | `id`, `user_id`, `provider`, `external_account_id`, `status`, `scopes_json`, secret reference | Do not persist plaintext OAuth credentials |
-| `github_repositories` | P1 | `id`, `integration_id`, `external_repo_id`, `full_name`, `default_branch`, `private` | GitHub mirror metadata |
-| `project_repositories` | P1 | `project_id`, `repository_id` | Many-to-many if needed |
-| `github_artifacts` | P1 | `id`, `repository_id`, `type`, `external_id`, `sha`, `url`, `title`, `occurred_at`, `metadata_json` | COMMIT/PR/FILE/RELEASE |
+| `integrations` | P1 ✔ | `id`, `user_id`, `provider`, `external_account_id`, `status`, `scopes_json`, secret reference | Do not persist plaintext OAuth credentials (built: see P1 notes below) |
+| `github_repositories` | P1 ✔ | `id`, `integration_id`, `external_repo_id`, `full_name`, `default_branch`, `private` | GitHub mirror metadata |
+| `project_repositories` | P1 ✔ | `project_id`, `repository_id` | Many-to-many if needed (v1: one repository per project) |
+| `github_artifacts` | P1 ✔ | `id`, `repository_id`, `type`, `external_id`, `sha`, `url`, `title`, `occurred_at`, `metadata_json` | COMMIT/PR/FILE/RELEASE |
 | `ai_runs` | ✔ | `id`, `user_id`, `session_id nullable`, `purpose`, `provider`, `model`, `prompt_version`, `input_hash`, `output_json`, `latency_ms`, token usage, status | AI observability without requiring raw prompt retention |
 | `event_log` | ➕ | `id`, `user_id`, `event_name`, `entity_type`, `entity_id`, `metadata_json`, timestamp | Product analytics / KPI calculation |
 
@@ -216,3 +216,20 @@ Where the code differs from, or adds to, the tables above. **These supersede the
 - A new concept may start only at `EXPOSED` or `LEARNED`; every later stage change is recorded in `progress_events` with its provenance (`source`, `session_id`).
 - `concept_captured.via` is `MANUAL`, `CAPTURE` or `EXTRACTION`. `ai_runs` stores a SHA-256 of the prompt, never the prompt.
 - `GET /sessions/:id` exposes tutor metadata (`hintLevel`, `nextQuestion`, `suggestedProgress`, `fallback`); model `observations` are stored but never shown.
+
+## Implementation notes (P1 GitHub integration, 2026-10-06)
+
+Migration `drizzle/0001_github_integration.sql`; schema in `src/lib/db/schema/integrations.ts`. Setup: [integrations/github-app.md](integrations/github-app.md). **Metadata only:** no token, key, code, diff, commit body or file content is stored anywhere (AT-22, `tests/integration/integrations/github/persistence-audit.test.ts`).
+
+| Table | Columns (beyond `id`, timestamps) | Notes |
+|---|---|---|
+| `integrations` | `user_id`, `provider`, `external_account_id` / `_login` / `_type`, `installation_id bigint`, `status`, `scopes_json`, `connected_at`, `disconnected_at` | The data model's "secret reference" is the **GitHub App installation id**: installation tokens (1 h) are minted per request with the App's private key (server env) and never stored. `UNIQUE (user_id, provider, installation_id)` (reconnecting reuses the row); partial `UNIQUE (user_id, provider) WHERE status <> 'DISCONNECTED'` (one live connection per student). Disconnected rows are kept as history. |
+| `github_repositories` | `integration_id`, `user_id`, `external_repo_id bigint`, `full_name`, `default_branch`, `private`, `html_url`, `removed_at` | Only repositories the student LINKED are mirrored. `UNIQUE (integration_id, external_repo_id)`. `removed_at` = no longer shared with the installation (webhook). |
+| `project_repositories` | `project_id`, `repository_id`, `created_at` | Join table (no `user_id`; reached through the owned project). PK `(project_id, repository_id)` plus `UNIQUE (project_id)`: v1 links at most one repository per project, which keeps `projects.repo_url` coherent (linking sets it, unlinking clears it; `PATCH /projects/:id` cannot change it while linked). |
+| `github_artifacts` | `repository_id`, `user_id`, `type`, `external_id`, `sha`, `url`, `title`, `occurred_at`, `metadata_json`, `stale_at` | `external_id`: COMMIT sha · PR number · FILE `<sha>:<path>` (one row per file version). `UNIQUE (repository_id, type, external_id)`. `title` is the commit headline / PR title / path only. `stale_at` = GitHub access ended (disconnect, uninstall, repository unshared): kept when evidence uses it, deleted otherwise. |
+| `evidence_items.github_artifact_id` | nullable FK | `ON DELETE SET NULL`: removing an artifact never removes the explanation or the copied `artifact_url` (AT-16). |
+| `github_connect_states` | `nonce_hash` (PK), `user_id`, `expires_at`, `consumed_at` | Backs the single-use connect `state` (SHA-256 of its nonce only). The student's used/expired rows are deleted when a new one is issued. |
+| `github_webhook_deliveries` | `delivery_id` (PK), `event`, `action`, `received_at` | System table (no user data) making webhooks idempotent; rows older than 30 days are pruned on the next delivery. |
+
+- Enumerations: `integrations.provider` = `GITHUB`; `integrations.status` = `CONNECTED`, `SUSPENDED`, `DISCONNECTED` (resolves the `integrations.status` gap in R-24); `github_artifacts.type` = `COMMIT`, `PR`, `FILE`, `RELEASE` (as listed above; the v1 picker does not offer `RELEASE`, which would map to the evidence artifact type `URL`).
+- Every FK is `CASCADE` (user → integrations → repositories → artifacts / project links) or `SET NULL` (`evidence_items.github_artifact_id`); account deletion removes all GitHub rows (tested in `tests/integration/schema.test.ts`).

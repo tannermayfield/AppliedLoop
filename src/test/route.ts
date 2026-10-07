@@ -1,4 +1,4 @@
-import type { AppContext } from "../lib/context";
+import type { AppContext, SystemContext } from "../lib/context";
 import { UnauthenticatedError } from "../lib/errors";
 
 // Test support for route handlers (src/app/api/v1/**/route.ts). Route files are built with
@@ -11,10 +11,16 @@ import { UnauthenticatedError } from "../lib/errors";
 //   const res = await callRoute(GET, { url: "/api/v1/learning-sources" });
 
 let current: AppContext | null = null;
+let system: SystemContext | null = null;
 
 /** Who the next request is made as. `null` = signed out (the route answers 401). */
 export function setRouteContext(ctx: AppContext | null): void {
   current = ctx;
+}
+
+/** The session-less context the signature-authenticated webhook route gets (P1 GitHub). */
+export function setSystemContext(ctx: SystemContext | null): void {
+  system = ctx;
 }
 
 export const appContextMock = {
@@ -25,6 +31,10 @@ export const appContextMock = {
   getPageContext: async (): Promise<AppContext> => {
     if (!current) throw new UnauthenticatedError();
     return current;
+  },
+  getSystemContext: async (): Promise<SystemContext> => {
+    if (!system) throw new Error("setSystemContext() was not called in this test");
+    return system;
   },
 };
 

@@ -35,6 +35,13 @@ const rawSchema = z.object({
     blankToUndefined,
     z.coerce.number().int().positive().default(60),
   ),
+  // P1 GitHub App (repository linking + artifact selection). All optional; see githubAppFrom().
+  GITHUB_APP_ID: optionalString,
+  GITHUB_APP_SLUG: optionalString,
+  GITHUB_APP_CLIENT_ID: optionalString,
+  GITHUB_APP_CLIENT_SECRET: optionalString,
+  GITHUB_APP_PRIVATE_KEY: optionalString,
+  GITHUB_APP_WEBHOOK_SECRET: optionalString,
 });
 
 export type AiMode = "demo" | "live" | "off";
@@ -42,6 +49,70 @@ export type AiMode = "demo" | "live" | "off";
 export interface OAuthCredentials {
   clientId: string;
   clientSecret: string;
+}
+
+/**
+ * The GitHub App used for repository access (ADR-0002: separate from sign-in). Server-only: none
+ * of these values may reach browser code.
+ */
+export interface GitHubAppEnv {
+  appId: string;
+  slug: string;
+  clientId: string;
+  clientSecret: string;
+  /** PEM. `\n`-escaped values (one-line env vars) are unescaped. */
+  privateKey: string;
+  webhookSecret: string;
+}
+
+/** Each GitHub App variable with its format rule. Messages name the rule, never the value. */
+const GITHUB_APP_VARIABLES = [
+  ["GITHUB_APP_ID", (v: string) => /^\d+$/.test(v), "must be the numeric App ID"],
+  ["GITHUB_APP_SLUG", (v: string) => /^[a-z0-9][a-z0-9-]{0,99}$/i.test(v), "must be the App's URL name"],
+  ["GITHUB_APP_CLIENT_ID", (v: string) => /^[A-Za-z0-9._-]{1,100}$/.test(v), "must be the App's client ID"],
+  ["GITHUB_APP_CLIENT_SECRET", (v: string) => v.length >= 8, "must be the App's client secret"],
+  ["GITHUB_APP_PRIVATE_KEY", (v: string) => /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(v), "must be the PEM private key"],
+  ["GITHUB_APP_WEBHOOK_SECRET", (v: string) => v.length >= 16, "must be at least 16 characters"],
+] as const;
+
+/**
+ * All six variables set and well-formed → configured. None set → not configured, a valid choice:
+ * the app falls back to pasted links. Anything in between is reported in `problems` (variable
+ * names and rules only, never values) and also treated as not configured, so a typo in an
+ * optional integration never stops the whole app from booting.
+ */
+export function githubAppFrom(
+  raw: Partial<Record<(typeof GITHUB_APP_VARIABLES)[number][0], string | undefined>>,
+): {
+  config?: GitHubAppEnv;
+  problems: string[];
+} {
+  const values = new Map<string, string>();
+  const problems: string[] = [];
+  for (const [name, isValid, rule] of GITHUB_APP_VARIABLES) {
+    const value = raw[name]?.trim();
+    // A one-line env var holds the PEM with literal "\n" sequences.
+    const normalized = name === "GITHUB_APP_PRIVATE_KEY" ? value?.replace(/\\n/g, "\n") : value;
+    if (normalized === undefined || normalized === "") problems.push(`${name} is missing`);
+    else if (!isValid(normalized)) problems.push(`${name} ${rule}`);
+    else values.set(name, normalized);
+  }
+  if (values.size === 0 && problems.every((problem) => problem.endsWith("is missing"))) {
+    return { problems: [] };
+  }
+  if (problems.length > 0) return { problems };
+  const get = (name: (typeof GITHUB_APP_VARIABLES)[number][0]) => values.get(name) as string;
+  return {
+    config: {
+      appId: get("GITHUB_APP_ID"),
+      slug: get("GITHUB_APP_SLUG"),
+      clientId: get("GITHUB_APP_CLIENT_ID"),
+      clientSecret: get("GITHUB_APP_CLIENT_SECRET"),
+      privateKey: get("GITHUB_APP_PRIVATE_KEY"),
+      webhookSecret: get("GITHUB_APP_WEBHOOK_SECRET"),
+    },
+    problems: [],
+  };
 }
 
 export interface Env {
@@ -59,6 +130,10 @@ export interface Env {
   aiGatewayApiKey?: string;
   aiModels: { CAPTURE?: string; OPPORTUNITY?: string; TUTOR?: string; EXTRACTION?: string };
   aiRateLimitPerHour: number;
+  /** Undefined = GitHub linking is off; the UI says so calmly and pasted links keep working. */
+  githubApp?: GitHubAppEnv;
+  /** Why a partial or malformed GitHub App configuration was ignored (logged once at startup). */
+  githubAppProblems: string[];
 }
 
 const TEST_SECRET = "test-secret-test-secret-test-secret-0123456789";
@@ -89,6 +164,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   // developing and off in production (a deployed app must never silently fake its AI).
   const aiMode: AiMode =
     raw.AI_MODE ?? (raw.AI_GATEWAY_API_KEY ? "live" : isProduction ? "off" : "demo");
+  const githubApp = githubAppFrom(raw);
 
   return {
     nodeEnv: raw.NODE_ENV,
@@ -114,6 +190,8 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
       EXTRACTION: raw.AI_MODEL_EXTRACTION,
     },
     aiRateLimitPerHour: raw.AI_RATE_LIMIT_PER_HOUR,
+    githubApp: githubApp.config,
+    githubAppProblems: githubApp.problems,
   };
 }
 

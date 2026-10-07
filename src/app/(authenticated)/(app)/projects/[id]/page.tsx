@@ -12,7 +12,10 @@ import { parseProjectTab } from "@/components/projects/project-tab-ids";
 import { ProjectTabs } from "@/components/projects/project-tabs";
 import { EvidenceTab } from "@/components/projects/tabs/evidence-tab";
 import { SessionsTab } from "@/components/projects/tabs/sessions-tab";
+import { parseGitHubNotice } from "@/components/integrations/connect-notice";
 import { getMe } from "@/domain/identity/me";
+import { getIntegrations } from "@/domain/integrations/github/integration";
+import { getProjectRepository } from "@/domain/integrations/github/repositories";
 import { listConcepts } from "@/domain/learning/concepts";
 import { listSkills } from "@/domain/learning/skills";
 import { listContextVersions } from "@/domain/projects/context";
@@ -29,7 +32,8 @@ export default async function ProjectPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
-  const tab = parseProjectTab((await searchParams).tab);
+  const query = await searchParams;
+  const tab = parseProjectTab(query.tab);
   const c = await getPageContext();
 
   const summary = await orNotFound(getProjectSummary(c, id));
@@ -65,6 +69,9 @@ export default async function ProjectPage({
           versions={await listContextVersions(c, id)}
           catalog={await listSkills(c)}
           timeZone={(await getMe(c)).profile.timezone}
+          github={(await getIntegrations(c)).github}
+          repository={await getProjectRepository(c, id)}
+          githubNotice={parseGitHubNotice(query.github)}
         />
       )}
       {tab === "learning" && (
