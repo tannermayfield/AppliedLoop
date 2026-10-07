@@ -23,20 +23,21 @@ export const todayCopy = {
       body: "You added this to review. Come back to it when you're ready.",
       practice: "Practice it",
       open: "Open concept",
-      actionLabel: (concept: string) => `Review ${concept}`,
+      // Accessible names start with the visible text (WCAG 2.5.3 Label in Name).
+      actionLabel: (visible: string, concept: string) => `${visible}: ${concept}`,
     },
     apply: {
       practiceIn: (project: string) => `Practice inside ${project}`,
       from: (source: string) => `from ${source}`,
       action: "Start Apply session",
-      actionLabel: (concept: string) => `Start an Apply session for ${concept}`,
+      actionLabel: (concept: string) => `Start Apply session: ${concept}`,
     },
     build: {
       milestone: (milestone: string) => `Current milestone: ${milestone}`,
       setMilestone: "Set a milestone",
       setMilestoneLabel: (project: string) => `Set a milestone for ${project}`,
       action: "Start Build session",
-      actionLabel: (project: string) => `Start a Build session in ${project}`,
+      actionLabel: (project: string) => `Start Build session: ${project}`,
     },
   },
 

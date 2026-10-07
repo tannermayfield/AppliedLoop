@@ -60,9 +60,9 @@ export const EXTRACTION_COPY = {
 export const NEEDS_REVIEW_COPY = {
   description: "Concepts you chose to revisit. Practice one in an Apply session when you're ready.",
   startApply: "Start Apply",
-  startApplyLabel: (name: string) => `Start an Apply session for ${name}`,
+  startApplyLabel: (name: string) => `Start Apply: ${name}`,
   resolve: "Mark resolved",
-  resolveLabel: (name: string) => `Mark ${name} as resolved`,
+  resolveLabel: (name: string) => `Mark resolved: ${name}`,
   pin: (name: string) => `Pin ${name}`,
   unpin: (name: string) => `Unpin ${name}`,
   pinned: "Pinned",

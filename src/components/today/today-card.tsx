@@ -64,7 +64,10 @@ export function TodayCardView({ card }: { card: TodayCard }) {
             href={card.href}
             cardType="NEEDS_REVIEW"
             tone="NEUTRAL"
-            label={copy.needsReview.actionLabel(card.conceptName)}
+            label={copy.needsReview.actionLabel(
+              card.projectId ? copy.needsReview.practice : copy.needsReview.open,
+              card.conceptName,
+            )}
           >
             {card.projectId ? copy.needsReview.practice : copy.needsReview.open}
             <ArrowRight aria-hidden />

@@ -112,7 +112,7 @@ export function ApplyView({
             </>
           )}
         </div>
-        <aside className="order-1 lg:sticky lg:top-6 lg:order-2">
+        <aside aria-label={t.challengeLandmark} className="order-1 lg:sticky lg:top-6 lg:order-2">
           {opportunity ? (
             <ChallengeCard
               sessionId={session.id}

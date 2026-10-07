@@ -9,6 +9,7 @@ const t = searchCopy.shell;
  * The search box in the app frame: the sidebar on desktop, the top bar on phones. A plain GET form
  * to /search?q=, so it needs no JavaScript and the results page is an ordinary, shareable URL.
  * Pressing Enter submits it; the visually hidden button is for screen readers and switch users.
+ * Every search landmark on a page needs its own name (the Learn page has a second one).
  */
 export function ShellSearch({
   variant,
@@ -19,7 +20,13 @@ export function ShellSearch({
 }) {
   const id = `shell-search-${variant}`;
   return (
-    <form method="get" action="/search" role="search" className={cn("min-w-0", className)}>
+    <form
+      method="get"
+      action="/search"
+      role="search"
+      aria-label={t.label}
+      className={cn("min-w-0", className)}
+    >
       <label htmlFor={id} className="sr-only">
         {t.label}
       </label>

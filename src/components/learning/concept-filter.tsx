@@ -13,7 +13,7 @@ const t = learnCopy.search;
  */
 export function ConceptFilter({ query }: { query: string }) {
   return (
-    <form method="get" action="/learn" role="search" className="space-y-1.5">
+    <form method="get" action="/learn" role="search" aria-label={t.label} className="space-y-1.5">
       <Label htmlFor="learn-search">{t.label}</Label>
       <div className="flex flex-wrap items-center gap-2">
         <Input

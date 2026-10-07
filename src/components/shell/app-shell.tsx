@@ -19,7 +19,10 @@ interface Props {
 export function AppShell({ user, demoAi, children }: Props) {
   return (
     <div className="flex min-h-svh flex-col md:flex-row">
-      <aside className="bg-sidebar sticky top-0 hidden h-svh w-60 shrink-0 flex-col border-r p-4 md:flex">
+      <aside
+        aria-label={copy.nav.sidebarLabel}
+        className="bg-sidebar sticky top-0 hidden h-svh w-60 shrink-0 flex-col border-r p-4 md:flex"
+      >
         <Link
           href="/today"
           className="font-display mb-6 flex items-center gap-2 px-2 text-xl font-semibold"

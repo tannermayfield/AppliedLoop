@@ -24,6 +24,7 @@ export const copy = {
     tagline: "Ship with AI. Understand what you shipped.",
   },
   nav: {
+    sidebarLabel: "App sidebar",
     today: "Today",
     learn: "Learn",
     projects: "Projects",

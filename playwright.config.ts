@@ -27,7 +27,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // `dev:e2e` wipes the throwaway database, then starts Next on the E2E port.
+    // `dev:e2e` wipes the throwaway database, seeds the demo student (the accessibility spec audits
+    // that populated account; every other spec signs in as a fresh student), then starts Next.
     command: "pnpm dev:e2e",
     url: `http://localhost:${PORT}/sign-in`,
     reuseExistingServer: !process.env.CI,
@@ -36,6 +37,7 @@ export default defineConfig({
       AI_MODE: "demo",
       AUTH_DEV_LOGIN: "1",
       E2E_PORT: String(PORT),
+      E2E_SEED_DEMO: "1",
       PGLITE_DATA_DIR: process.env.E2E_DATA_DIR ?? ".data/e2e",
       BETTER_AUTH_URL: `http://localhost:${PORT}`,
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "e2e-secret-e2e-secret-e2e-secret-e2e",

@@ -60,6 +60,7 @@ export const APPLY_COPY = {
     concept: (concept: string | null, project: string) =>
       concept ? `${concept} × ${project}` : project,
     challenge: "Challenge",
+    challengeLandmark: "Practice challenge",
     whyFits: "Why this fits",
     successCriteria: "Success criteria",
     criteriaNote: "Ticks stay on this device.",

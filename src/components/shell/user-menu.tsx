@@ -41,7 +41,9 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full">
           <Avatar className="size-8">
-            <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
+            <AvatarFallback className="text-xs" aria-hidden>
+              {initials(name)}
+            </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
