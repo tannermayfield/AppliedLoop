@@ -17,6 +17,21 @@ import { SetAsideSessionButton } from "./set-aside-session-button";
 
 const t = BUILD_COPY.session;
 
+// Client components get plain strings only: `t` also holds functions, which Next cannot serialize
+// across the server/client boundary.
+const setAsideCopy = {
+  setAside: t.setAside,
+  setAsideTitle: t.setAsideTitle,
+  setAsideBody: t.setAsideBody,
+  cancel: t.cancel,
+};
+const deleteCopy = {
+  delete: t.delete,
+  deleteTitle: t.deleteTitle,
+  deleteBody: t.deleteBody,
+  cancel: t.cancel,
+};
+
 /**
  * Build mode (amber, AI acceleration allowed). No chat (ADR-0009): a context pack for the
  * student's own agent, notes, and Finish & Extract. Ended sessions render read-only.
@@ -81,7 +96,7 @@ async function ActiveBuild({ c, session }: { c: Ctx; session: SessionDetailDto }
         <NotesEditor sessionId={session.id} initial={session.notes} />
         <FinishForm sessionId={session.id} />
         <div>
-          <SetAsideSessionButton sessionId={session.id} copy={t} />
+          <SetAsideSessionButton sessionId={session.id} copy={setAsideCopy} />
         </div>
       </div>
     </div>
@@ -129,7 +144,7 @@ async function EndedBuild({ c, session }: { c: Ctx; session: SessionDetailDto })
           </div>
         ))}
       <div>
-        <DeleteSessionButton sessionId={session.id} copy={t} />
+        <DeleteSessionButton sessionId={session.id} copy={deleteCopy} />
       </div>
     </div>
   );
