@@ -63,7 +63,7 @@ describe("nextStepFor: one honest next step per situation", () => {
       ].map(([kind, v]) => [kind as string, nextStepFor(v as TodayView)?.href]),
     );
     expect(hrefs).toEqual({
-      setup: "/onboarding",
+      setup: "/projects/new",
       "add-project": "/projects/new",
       "no-active-project": "/projects",
       capture: "/learn",

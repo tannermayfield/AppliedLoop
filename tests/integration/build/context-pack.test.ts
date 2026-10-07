@@ -132,7 +132,61 @@ describe("buildContextPack (AT-11, AT-12)", () => {
     expect(codex.markdown.split("\n").slice(0, 3).join("\n")).toMatch(
       /paste this as your first message/i,
     );
-    expect(claude.markdown.split("\n").slice(0, 3).join("\n")).toMatch(/CLAUDE\.md/);
+    const header = claude.markdown.split("\n").slice(0, 3).join("\n");
+    // Not CLAUDE.md: the student's repository may already have one with their own instructions.
+    expect(header).toMatch(/BUILD_BRIEF\.md/);
+    expect(header).not.toMatch(/save (this )?as CLAUDE\.md/i);
+  });
+
+  it("asks for commit or PR links and warns the agent to keep secrets out of its summary", async () => {
+    const alice = await app.makeUser();
+    const { session } = await insertBuildSetup(app.db, alice.id);
+    const { markdown } = await buildContextPack(alice.ctx, session.id, { target: "GENERIC" });
+    expect(markdown).toMatch(/commit hashes or pull-request links/i);
+    expect(markdown).toMatch(/keep secrets \(api keys, tokens, \.env contents\) out/i);
+  });
+
+  describe("a Build session that began as a switch from Apply (journeys audit F-10)", () => {
+    it("hands the agent the challenge's task and success criteria, not only its title", async () => {
+      const alice = await app.makeUser();
+      const apply = await insertApplySetup(app.db, alice.id);
+      const { switchToBuild } = await import("@/domain/sessions/apply/switch");
+      const build = await switchToBuild(alice.ctx, apply.session.id);
+
+      const { markdown } = await buildContextPack(alice.ctx, build.id, { target: "GENERIC" });
+
+      expect(markdown).toContain("## Challenge handed over from Apply mode");
+      expect(markdown).toContain(apply.opportunity.title);
+      expect(markdown).toContain(apply.opportunity.task);
+      for (const criterion of apply.opportunity.successCriteriaJson) {
+        expect(markdown).toContain(`- ${criterion}`);
+      }
+      // Still no Apply restrictions in the pack (AT-12).
+      expect(markdown).not.toMatch(/apply mode:|tutor|hint/i);
+    });
+
+    it("leaves the section out when the Apply session or its challenge was deleted", async () => {
+      const alice = await app.makeUser();
+      const apply = await insertApplySetup(app.db, alice.id);
+      const { switchToBuild } = await import("@/domain/sessions/apply/switch");
+      const build = await switchToBuild(alice.ctx, apply.session.id);
+      const { practiceOpportunities } = await import("@/lib/db/schema");
+      const { eq } = await import("drizzle-orm");
+      await app.db
+        .delete(practiceOpportunities)
+        .where(eq(practiceOpportunities.id, apply.opportunity.id));
+
+      const { markdown } = await buildContextPack(alice.ctx, build.id, { target: "GENERIC" });
+
+      expect(markdown).not.toContain("Challenge handed over");
+    });
+
+    it("has no such section for a Build session that started on its own", async () => {
+      const alice = await app.makeUser();
+      const { session } = await insertBuildSetup(app.db, alice.id);
+      const { markdown } = await buildContextPack(alice.ctx, session.id, { target: "GENERIC" });
+      expect(markdown).not.toContain("Challenge handed over");
+    });
   });
 
   it("lists this project's open Needs Review concepts by name only", async () => {

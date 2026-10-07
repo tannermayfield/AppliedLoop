@@ -145,6 +145,8 @@ const isOpenDebt = (item: TodayDebt) => item.status === "OPEN" || item.status ==
  *    in the strip under the cards, which counts everything.
  *  - Paused, complete and archived projects are never suggested, and nothing in them is resumed.
  *  - One card per type by default (`maxCardsPerType`): Today answers "what first?", not "what all?".
+ *  - NO DUPLICATES: a concept shown as a Needs Review card is skipped for Apply, and a project with
+ *    an unfinished Build session gets no "Start Build session" card (it is resumed instead).
  */
 export function selectTodayActions(
   input: TodayInput,
@@ -214,6 +216,31 @@ export function selectTodayActions(
         href: `/build/new?projectId=${project.id}`,
       })),
   };
+
+  // No two cards for the same thing (journeys audit F-03). A concept already offered as a Needs
+  // Review card is not offered again as an Apply card (both lead to the same page), so the next
+  // concept takes its place; a project whose Build session is unfinished is resumed, not started
+  // a second time.
+  if (config.order.includes("NEEDS_REVIEW")) {
+    const reviewed = new Set(
+      candidates.NEEDS_REVIEW.slice(0, config.maxCardsPerType).flatMap((card) =>
+        card.type === "NEEDS_REVIEW" ? [card.conceptId] : [],
+      ),
+    );
+    candidates.APPLY = candidates.APPLY.filter(
+      (card) => card.type !== "APPLY" || !reviewed.has(card.conceptId),
+    );
+  }
+  if (config.order.includes("RESUME")) {
+    const resumedBuilds = new Set(
+      input.sessions
+        .filter((session) => session.type === "BUILD" && session.projectStatus === "ACTIVE")
+        .map((session) => session.projectId),
+    );
+    candidates.BUILD = candidates.BUILD.filter(
+      (card) => card.type !== "BUILD" || !resumedBuilds.has(card.projectId),
+    );
+  }
 
   return config.order.flatMap((type) => candidates[type].slice(0, config.maxCardsPerType));
 }

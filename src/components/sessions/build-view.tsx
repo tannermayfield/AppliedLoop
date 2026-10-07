@@ -12,6 +12,8 @@ import type { SessionDetailDto } from "@/domain/sessions/sessions";
 import { getPageContext } from "@/lib/app-context";
 import { BUILD_COPY } from "@/lib/copy-build";
 import { MODE_COPY } from "@/lib/copy";
+import { DeleteSessionButton } from "./delete-session-button";
+import { SetAsideSessionButton } from "./set-aside-session-button";
 
 const t = BUILD_COPY.session;
 
@@ -78,6 +80,9 @@ async function ActiveBuild({ c, session }: { c: Ctx; session: SessionDetailDto }
       <div className="space-y-6">
         <NotesEditor sessionId={session.id} initial={session.notes} />
         <FinishForm sessionId={session.id} />
+        <div>
+          <SetAsideSessionButton sessionId={session.id} copy={t} />
+        </div>
       </div>
     </div>
   );
@@ -123,6 +128,9 @@ async function EndedBuild({ c, session }: { c: Ctx; session: SessionDetailDto })
             </Button>
           </div>
         ))}
+      <div>
+        <DeleteSessionButton sessionId={session.id} copy={t} />
+      </div>
     </div>
   );
 }

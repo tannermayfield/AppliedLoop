@@ -3,10 +3,16 @@ import { z } from "zod";
 import type { AppContext } from "@/lib/context";
 import { BUILD_COPY } from "@/lib/copy-build";
 import { concepts, learningDebtItems } from "@/lib/db/schema";
-import { ConflictError, parseOrThrow } from "@/lib/errors";
+import { ConflictError, NotFoundError, parseOrThrow } from "@/lib/errors";
 import { ownedBy } from "@/lib/ownership";
 import { BUILD_PREAMBLE } from "@/prompts/build/preamble";
-import { loadLatestContext, loadOwnedProject, loadOwnedSession } from "../loaders";
+import {
+  loadLatestContext,
+  loadOwnedOpportunity,
+  loadOwnedProject,
+  loadOwnedSession,
+  type SessionRow,
+} from "../loaders";
 
 // The Build context pack (SPEC §3 Build journey, SPEC_REVIEW R-03/R-07, ADR-0009): a compact
 // Markdown brief the student pastes into their own coding agent. Preamble first, then the project's
@@ -35,7 +41,9 @@ export interface ContextPack {
 
 const HEADERS: Record<ContextPackTarget, string> = {
   CODEX: "> Paste this as your first message to Codex.",
-  CLAUDE_CODE: "> Save this as CLAUDE.md in your repository, or paste it into the chat.",
+  // Not CLAUDE.md: the student's repository may already have one with their own instructions.
+  CLAUDE_CODE:
+    "> Paste this as your first message to Claude Code, or save it as BUILD_BRIEF.md in your repository.",
   GENERIC: "> Paste this as your first message to your coding agent.",
 };
 
@@ -64,6 +72,7 @@ export async function buildContextPack(
   const project = await loadOwnedProject(c, session.projectId);
   const snapshot = await loadLatestContext(c, project.id);
   const reviewing = await openReviewConceptNames(c, project.id);
+  const handedOver = await challengeHandedOver(c, session);
 
   const objective = snapshot?.summary || project.problemStatement || project.description;
   const fields = {
@@ -94,6 +103,7 @@ export async function buildContextPack(
     `## Previous decisions\n${orMissing(fields.decisions)}`,
     `## Current milestone\n${orMissing(fields.milestone)}`,
     `## Session goal\n${orMissing(fields.goal)}`,
+    ...(handedOver ? [handedOver] : []),
     `## Concepts the student is working to understand\n${
       reviewing.length > 0
         ? `${reviewing.map((name) => `- ${name}`).join("\n")}\n\nWhere these come up, a short explanation helps.`
@@ -102,6 +112,31 @@ export async function buildContextPack(
   ];
 
   return { target, markdown: `${sections.join("\n\n")}\n`, included };
+}
+
+/**
+ * When this Build session began as a switch from Apply mode (SPEC §5, R-06), the practice challenge
+ * the student handed over: its task and success criteria, so the agent knows what "done" means.
+ */
+async function challengeHandedOver(c: AppContext, session: SessionRow): Promise<string | null> {
+  if (!session.parentSessionId) return null;
+  try {
+    const parent = await loadOwnedSession(c, session.parentSessionId);
+    if (!parent.opportunityId) return null;
+    const challenge = await loadOwnedOpportunity(c, parent.opportunityId);
+    const criteria = challenge.successCriteriaJson.map((criterion) => `- ${clip(criterion)}`);
+    return [
+      "## Challenge handed over from Apply mode",
+      "The student started this as a practice challenge, then chose to build it with AI help.",
+      `**${challenge.title}**\n\n${orMissing(challenge.task)}`,
+      criteria.length > 0 ? `Success criteria:\n${criteria.join("\n")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  } catch (error) {
+    if (error instanceof NotFoundError) return null; // the Apply session or challenge was deleted
+    throw error;
+  }
 }
 
 /** Names of this project's OPEN/PLANNED Needs Review concepts. Names only, nothing else. */

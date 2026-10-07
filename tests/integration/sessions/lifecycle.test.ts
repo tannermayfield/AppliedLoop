@@ -6,7 +6,7 @@ import {
   deleteSession,
   updateSessionNotes,
 } from "@/domain/sessions/sessions";
-import { eventLog, sessionMessages, sessions } from "@/lib/db/schema";
+import { aiRuns, eventLog, sessionMessages, sessions } from "@/lib/db/schema";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertProject, insertSession } from "@/test/factories";
@@ -143,11 +143,47 @@ describe("session lifecycle", () => {
       expect(left.map((m) => m.content)).toEqual(["keep me"]);
     });
 
-    it("answers NOT_FOUND for someone else's session and deletes nothing", async () => {
+    it("also deletes the model output kept for the session, but not other runs (privacy, L-13)", async () => {
+      const alice = await app.makeUser();
+      const { session } = await insertApplySetup(app.db, alice.id);
+      const keep = await buildSession(alice.id);
+      const run = (sessionId: string | null, marker: string) => ({
+        userId: alice.id,
+        sessionId,
+        purpose: "TUTOR" as const,
+        provider: "scripted",
+        model: "m",
+        promptVersion: "apply/v2",
+        inputHash: marker,
+        outputJson: { coachMessage: `quotes the student's pasted code: ${marker}` },
+        status: "SUCCEEDED" as const,
+      });
+      await app.db
+        .insert(aiRuns)
+        .values([run(session.id, "gone-1"), run(session.id, "gone-2"), run(keep.id, "keep"), run(null, "no-session")]);
+
+      await deleteSession(alice.ctx, session.id);
+
+      const left = await app.db.select().from(aiRuns);
+      expect(left.map((row) => row.inputHash).sort()).toEqual(["keep", "no-session"]);
+    });
+
+    it("answers NOT_FOUND for someone else's session and deletes nothing, runs included", async () => {
       const [alice, bob] = [await app.makeUser(), await app.makeUser()];
       const build = await buildSession(alice.id);
+      await app.db.insert(aiRuns).values({
+        userId: alice.id,
+        sessionId: build.id,
+        purpose: "EXTRACTION",
+        provider: "scripted",
+        model: "m",
+        promptVersion: "extraction/v1",
+        inputHash: "alice-run",
+        status: "SUCCEEDED",
+      });
       await expect(deleteSession(bob.ctx, build.id)).rejects.toBeInstanceOf(NotFoundError);
       expect(await stored(build.id)).toBeDefined();
+      expect(await app.db.select().from(aiRuns)).toHaveLength(1);
     });
   });
 

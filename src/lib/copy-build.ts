@@ -95,6 +95,17 @@ export const BUILD_COPY = {
     startExtraction: "Look for concepts worth reviewing",
     continuedFrom: "Continued from an Apply session",
     genericError: "Something went wrong. Please try again.",
+    // Leaving a session without finishing it (journeys audit F-06): a stale active Build session
+    // would otherwise own Today's Resume card for good.
+    setAside: "Set aside",
+    setAsideTitle: "Set this Build session aside?",
+    setAsideBody:
+      "It stays in your history but won't be reviewed for concepts. You can start a new Build session any time.",
+    delete: "Delete session",
+    deleteTitle: "Delete this Build session?",
+    deleteBody:
+      "This permanently deletes the session with its notes, summary and any potential concepts from its review. Concepts you already added to Needs Review stay.",
+    cancel: "Cancel",
   },
 
   sessionsTab: {

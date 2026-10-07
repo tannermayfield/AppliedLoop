@@ -28,7 +28,7 @@ export default async function TodayPage() {
         {hasCards && (
           <ul aria-label={todayCopy.listLabel} className="grid gap-4">
             {view.cards.map((card) => (
-              <li key={card.href}>
+              <li key={`${card.type}:${card.href}`}>
                 <TodayCardView card={card} />
               </li>
             ))}

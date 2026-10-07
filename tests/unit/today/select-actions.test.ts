@@ -509,3 +509,81 @@ describe("summarizeNeedsReview (the strip under the cards)", () => {
     expect(summarizeNeedsReview([])).toEqual({ count: 0, top: [] });
   });
 });
+
+describe("no two cards for the same thing (journeys audit F-03)", () => {
+  it("does not offer a concept as an Apply card when it is already the Needs Review card", () => {
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1")],
+        concepts: [
+          concept("c-r", { lastActivityAt: hoursAgo(1) }),
+          concept("c-next", { lastActivityAt: daysAgo(2) }),
+        ],
+        debt: [debt("r", { conceptId: "c-r", pinned: true })],
+      }),
+    );
+    expect(types(cards)).toEqual(["NEEDS_REVIEW", "APPLY", "BUILD"]);
+    const apply = cards.find((card) => card.type === "APPLY");
+    expect(apply).toMatchObject({ conceptId: "c-next" });
+    expect(new Set(cards.map((card) => card.href)).size).toBe(cards.length);
+  });
+
+  it("offers nothing for Apply when the only eligible concept is the Needs Review one", () => {
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1")],
+        concepts: [concept("c-r")],
+        debt: [debt("r", { conceptId: "c-r", pinned: true })],
+      }),
+    );
+    expect(types(cards)).toEqual(["NEEDS_REVIEW", "BUILD"]);
+  });
+
+  it("does not repeat a concept whose debt is not shown as a card", () => {
+    // Ordinary open debt only appears in the strip, so the concept stays a normal Apply card.
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1")],
+        concepts: [concept("c-r")],
+        debt: [debt("r", { conceptId: "c-r" })],
+      }),
+    );
+    expect(types(cards)).toEqual(["APPLY", "BUILD"]);
+  });
+
+  it("resumes an unfinished Build session instead of also offering to start another", () => {
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1"), project("p2", { lastActivityAt: daysAgo(10) })],
+        sessions: [session("s1", { type: "BUILD", projectId: "p1" })],
+      }),
+    );
+    expect(types(cards)).toEqual(["RESUME", "BUILD"]);
+    // The Build suggestion moves to the other project instead of repeating p1.
+    expect(cards.find((card) => card.type === "BUILD")).toMatchObject({ projectId: "p2" });
+  });
+
+  it("still offers Build for a project whose unfinished session is an Apply session", () => {
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1")],
+        sessions: [session("s1", { type: "APPLY", projectId: "p1" })],
+      }),
+    );
+    expect(types(cards)).toEqual(["RESUME", "BUILD"]);
+    expect(cards.find((card) => card.type === "BUILD")).toMatchObject({ projectId: "p1" });
+  });
+
+  it("gives every card a distinct key (type and href) so the list renders without warnings", () => {
+    const cards = selectTodayActions(
+      input({
+        projects: [project("p1")],
+        concepts: [concept("c1")],
+        sessions: [session("s1", { type: "APPLY" })],
+        debt: [debt("d1", { conceptId: "c1", pinned: true })],
+      }),
+    );
+    const keys = cards.map((card) => `${card.type}:${card.href}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});

@@ -19,7 +19,8 @@ export interface NextStep {
 export function nextStepFor(view: TodayView): NextStep | null {
   const empty = todayCopy.empty;
   if (!view.hasProject && !view.hasSource)
-    return { kind: "setup", ...empty.setup, href: "/onboarding" };
+    // Not /onboarding: students who skipped it are sent straight back to Today from there.
+    return { kind: "setup", ...empty.setup, href: "/projects/new" };
   if (!view.hasProject) return { kind: "add-project", ...empty.addProject, href: "/projects/new" };
   if (view.cards.length === 0) {
     return { kind: "no-active-project", ...empty.noActiveProject, href: "/projects" };

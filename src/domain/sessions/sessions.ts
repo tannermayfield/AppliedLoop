@@ -3,6 +3,7 @@ import { z } from "zod";
 import { inTransaction, type AppContext } from "@/lib/context";
 import { SESSION_ERRORS, SESSION_LIMITS, SESSION_VALIDATION } from "@/lib/copy-sessions";
 import {
+  aiRuns,
   concepts,
   practiceOpportunities,
   projects,
@@ -559,13 +560,27 @@ export async function abandonSession(c: AppContext, sessionId: string): Promise<
 }
 
 /** Hard delete (SPEC_REVIEW R-12: the student controls retention). Messages cascade. */
+/**
+ * Hard delete (SPEC_REVIEW R-12): the session, its thread, notes and summary, and the model output
+ * `ai_runs` kept for it (tutor replies can quote pasted code). The AI runs go first: afterwards
+ * their `session_id` would be null and nothing could find them. Runs that belong to no session,
+ * such as the practice-challenge suggestions, stay.
+ */
 export async function deleteSession(c: AppContext, sessionId: string): Promise<void> {
   assertId(sessionId, "Session");
-  const [row] = await c.db
-    .delete(sessions)
-    .where(and(eq(sessions.id, sessionId), ownedBy(sessions.userId, c.auth)))
-    .returning({ id: sessions.id });
-  requireRow(row, "Session");
+  await inTransaction(c, async (tx) => {
+    const [owned] = await tx.db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), ownedBy(sessions.userId, tx.auth)));
+    requireRow(owned, "Session");
+    await tx.db
+      .delete(aiRuns)
+      .where(and(eq(aiRuns.sessionId, sessionId), ownedBy(aiRuns.userId, tx.auth)));
+    await tx.db
+      .delete(sessions)
+      .where(and(eq(sessions.id, sessionId), ownedBy(sessions.userId, tx.auth)));
+  });
 }
 
 export const sessionNotes = z

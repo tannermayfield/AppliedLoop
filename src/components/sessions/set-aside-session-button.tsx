@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -15,51 +14,44 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { APPLY_COPY } from "@/lib/copy-sessions";
 import { api } from "./api";
 
-const t = APPLY_COPY.session;
-
-interface DeleteCopy {
-  delete: string;
-  deleteTitle: string;
-  deleteBody: string;
+interface SetAsideCopy {
+  setAside: string;
+  setAsideTitle: string;
+  setAsideBody: string;
   cancel: string;
 }
 
-/** Hard delete, so the student controls retention of pasted code (SPEC_REVIEW R-12). */
-export function DeleteSessionButton({
+/** Leave an unfinished session without finishing it: `POST /sessions/:id/abandon`. */
+export function SetAsideSessionButton({
   sessionId,
-  copy = t,
+  copy,
 }: {
   sessionId: string;
-  copy?: DeleteCopy;
+  copy: SetAsideCopy;
 }) {
   const router = useRouter();
 
-  async function remove() {
-    const result = await api(`/api/v1/sessions/${sessionId}`, { method: "DELETE" });
+  async function setAside() {
+    const result = await api(`/api/v1/sessions/${sessionId}/abandon`, { body: {} });
     if (!result.ok) return toast.error(result.message);
-    router.push("/today");
+    router.refresh();
   }
 
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-destructive">
-          <Trash2 aria-hidden /> {copy.delete}
-        </Button>
+        <Button variant="ghost">{copy.setAside}</Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{copy.deleteTitle}</AlertDialogTitle>
-          <AlertDialogDescription>{copy.deleteBody}</AlertDialogDescription>
+          <AlertDialogTitle>{copy.setAsideTitle}</AlertDialogTitle>
+          <AlertDialogDescription>{copy.setAsideBody}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{copy.cancel}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={remove}>
-            {copy.delete}
-          </AlertDialogAction>
+          <AlertDialogAction onClick={setAside}>{copy.setAside}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
