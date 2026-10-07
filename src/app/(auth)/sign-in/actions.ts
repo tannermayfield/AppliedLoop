@@ -1,9 +1,9 @@
 "use server";
 
-import { createHmac } from "node:crypto";
 import { APIError } from "better-auth/api";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { devLoginPassword } from "@/lib/auth/dev-login";
 import { getAuth } from "@/lib/auth/server";
 import { getEnv } from "@/lib/env";
 
@@ -39,10 +39,7 @@ export async function devSignIn(
 
   const { email } = parsed.data;
   const name = parsed.data.name || email.split("@")[0];
-  const password = createHmac("sha256", env.authSecret)
-    .update(`dev-login:${email}`)
-    .digest("hex")
-    .slice(0, 32);
+  const password = devLoginPassword(env.authSecret, email);
 
   const auth = await getAuth();
   try {

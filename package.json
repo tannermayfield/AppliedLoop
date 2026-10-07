@@ -17,7 +17,14 @@
     "e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/migrate.ts",
-    "db:seed": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed.ts"
+    "db:seed": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed.ts",
+    "db:seed:demo": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-demo.ts",
+    "db:restore-check": "tsx --conditions=react-server scripts/restore-check.ts",
+    "env:check": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/check-env.ts",
+    "vercel-build": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/predeploy.ts && pnpm build"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

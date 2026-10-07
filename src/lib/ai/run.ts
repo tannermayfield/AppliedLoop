@@ -4,6 +4,7 @@ import type { AppContext } from "../context";
 import { aiRuns } from "../db/schema";
 import type { AiRunStatus } from "../db/schema/enums";
 import { AiInvalidOutputError, AiUnavailableError, RateLimitedError } from "../errors";
+import { logger } from "../logger";
 import { emit } from "../telemetry/emit";
 import type { PromptSpec } from "./types";
 
@@ -22,9 +23,13 @@ export interface RunAiResult<O> {
   aiRunId: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+/**
+ * Exported because the AI route handlers' `maxDuration` must exceed the worst case of this budget
+ * (MAX_ATTEMPTS x DEFAULT_TIMEOUT_MS per `runAi`); tests/unit/ai-route-limits.test.ts enforces it.
+ */
+export const DEFAULT_TIMEOUT_MS = 60_000;
 /** One retry when the model returns something that fails schema validation. */
-const MAX_ATTEMPTS = 2;
+export const MAX_ATTEMPTS = 2;
 const HOUR_MS = 60 * 60 * 1000;
 /** First key of the per-user advisory lock that serializes rate-limit reservations ("AIRT"). */
 const RATE_LIMIT_LOCK_SPACE = 1095324244;
@@ -91,11 +96,16 @@ export async function runAi<I, O>(
       });
     } catch (error) {
       const status: AiRunStatus = isTimeout(error) ? "TIMEOUT" : "FAILED";
-      await finishRun(c, aiRunId, {
-        status,
-        latencyMs: elapsed(started),
-        errorMessage: describe(error),
-      });
+      await finishRun(
+        c,
+        aiRunId,
+        {
+          status,
+          latencyMs: elapsed(started),
+          errorMessage: describe(error),
+        },
+        base,
+      );
       await emit(c, "ai_run_failed", {
         entityType: "ai_run",
         entityId: aiRunId,
@@ -107,13 +117,18 @@ export async function runAi<I, O>(
 
     const parsed = spec.schema.safeParse(response.object);
     if (parsed.success) {
-      await finishRun(c, aiRunId, {
-        status: "SUCCEEDED",
-        latencyMs: elapsed(started),
-        outputJson: parsed.data,
-        inputTokens: response.usage.inputTokens,
-        outputTokens: response.usage.outputTokens,
-      });
+      await finishRun(
+        c,
+        aiRunId,
+        {
+          status: "SUCCEEDED",
+          latencyMs: elapsed(started),
+          outputJson: parsed.data,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        },
+        base,
+      );
       return { output: parsed.data, aiRunId };
     }
 
@@ -122,13 +137,18 @@ export async function runAi<I, O>(
       .slice(0, 5)
       .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
       .join("; ");
-    await finishRun(c, aiRunId, {
-      status: "INVALID_OUTPUT",
-      latencyMs: elapsed(started),
-      inputTokens: response.usage.inputTokens,
-      outputTokens: response.usage.outputTokens,
-      errorMessage: issues,
-    });
+    await finishRun(
+      c,
+      aiRunId,
+      {
+        status: "INVALID_OUTPUT",
+        latencyMs: elapsed(started),
+        inputTokens: response.usage.inputTokens,
+        outputTokens: response.usage.outputTokens,
+        errorMessage: issues,
+      },
+      base,
+    );
     await emit(c, "ai_run_failed", {
       entityType: "ai_run",
       entityId: aiRunId,
@@ -186,7 +206,12 @@ interface RunOutcome {
   errorMessage?: string;
 }
 
-async function finishRun(c: AiCtx, aiRunId: string, outcome: RunOutcome): Promise<void> {
+async function finishRun(
+  c: AiCtx,
+  aiRunId: string,
+  outcome: RunOutcome,
+  base: RunBase,
+): Promise<void> {
   await c.db
     .update(aiRuns)
     .set({
@@ -198,6 +223,20 @@ async function finishRun(c: AiCtx, aiRunId: string, outcome: RunOutcome): Promis
       errorMessage: outcome.errorMessage ?? null,
     })
     .where(and(eq(aiRuns.id, aiRunId), eq(aiRuns.userId, c.auth.userId)));
+  // One line per model call, for dashboards and alerts without database access. Facts about the
+  // call only: never the prompt, the student's text, the output or the error message.
+  logger[outcome.status === "SUCCEEDED" ? "info" : "warn"]("AI run", {
+    event: "ai_run",
+    aiRunId,
+    purpose: base.purpose,
+    provider: base.provider,
+    model: base.model,
+    promptVersion: base.promptVersion,
+    status: outcome.status,
+    latencyMs: outcome.latencyMs,
+    inputTokens: outcome.inputTokens,
+    outputTokens: outcome.outputTokens,
+  });
 }
 
 function elapsed(started: number): number {

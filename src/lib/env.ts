@@ -1,9 +1,16 @@
 import "server-only"; // secrets live here: importing this from browser code is a build error
 import { z } from "zod";
+import { checkEnvironment, EnvError, resolveAiMode, type EnvCheck } from "./env-check";
+
+export { EnvError } from "./env-check";
+export type { EnvCheck, EnvProblem } from "./env-check";
 
 // All configuration is read through here, validated once, and never exposed to the browser.
 // Call `getEnv()` inside functions, not at module top level, so `next build` and tests can load
 // modules without every variable being present.
+//
+// In production `loadEnv` refuses to start with an incomplete configuration and names EVERY
+// missing or invalid variable at once (see env-check.ts for the rules). It never prints a value.
 
 /** `.env` files contain `KEY=` for unset values; treat those as undefined. */
 const blankToUndefined = (value: unknown) =>
@@ -141,18 +148,34 @@ const TEST_SECRET = "test-secret-test-secret-test-secret-0123456789";
 /** 32 random bytes in base64 is 44 characters; anything under 32 is not a generated secret. */
 const MIN_PRODUCTION_SECRET_LENGTH = 32;
 
+/**
+ * Every problem with `source`, without throwing: for the health check, boot logs and the deploy
+ * scripts. `loadEnv` throws exactly these problems.
+ */
+export function validateEnv(source: Record<string, string | undefined> = process.env): EnvCheck {
+  const parsed = rawSchema.safeParse(source);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      problems: parsed.error.issues.map((issue) => ({
+        variable: String(issue.path[0] ?? "environment"),
+        message: issue.message,
+      })),
+      warnings: [],
+    };
+  }
+  return checkEnvironment(source, parsed.data);
+}
+
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
+  const check = validateEnv(source);
+  if (!check.ok) throw new EnvError(check.problems);
+
   const raw = rawSchema.parse(source);
   const isProduction = raw.NODE_ENV === "production";
 
-  if (isProduction && raw.AUTH_DEV_LOGIN) {
-    throw new Error("AUTH_DEV_LOGIN must not be enabled in production.");
-  }
-  // Demo answers are canned. A deployed app must never show them to students as its AI.
-  if (isProduction && raw.AI_MODE === "demo") {
-    throw new Error("AI_MODE=demo is for development only. Use AI_MODE=live or off in production.");
-  }
-
+  // The production rules (dev login, demo AI, secret length, OAuth, ...) live in env-check.ts and ran
+  // in `validateEnv` above; this is only the hint printed with a missing secret.
   const generate = `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`;
   let authSecret = raw.BETTER_AUTH_SECRET;
   if (!authSecret) {
@@ -172,8 +195,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
 
   // Explicit AI_MODE wins. Otherwise: a gateway key means live; no key means demo while
   // developing and off in production (a deployed app must never silently fake its AI).
-  const aiMode: AiMode =
-    raw.AI_MODE ?? (raw.AI_GATEWAY_API_KEY ? "live" : isProduction ? "off" : "demo");
+  const aiMode: AiMode = resolveAiMode(raw);
   const githubApp = githubAppFrom(raw);
 
   return {
@@ -216,3 +238,16 @@ export function getEnv(): Env {
 export function resetEnvCache(): void {
   cached = undefined;
 }
+
+/**
+ * Every variable the application reads: the schema's, plus the operational ones that only the
+ * logger, the error reporter and the deploy scripts read. `.env.example` and docs/RUNBOOK.md must
+ * mention each one (tests/unit/env-docs.test.ts).
+ */
+export const ENV_VARIABLES: readonly string[] = [
+  ...Object.keys(rawSchema.shape),
+  "DATABASE_URL_UNPOOLED",
+  "ERROR_WEBHOOK_URL",
+  "LOG_LEVEL",
+  "MIGRATE_ON_PREVIEW",
+];

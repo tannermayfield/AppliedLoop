@@ -9,6 +9,7 @@ import {
   validationErrorFromZod,
 } from "./errors";
 import { errorFields, logger } from "./logger";
+import { runWithRequestId, safeRequestId } from "./request-context";
 
 // The HTTP edge. Every route handler under src/app/api/v1 is built with `apiRoute`, which:
 //   resolve AppContext (401 if signed out) → run the handler → wrap as { data } / { error }
@@ -52,37 +53,42 @@ export function createApiRoute(resolveContext: () => Promise<AppContext>) {
   ) {
     return async (req: Request, segment?: RouteSegmentData): Promise<Response> => {
       const requestId = requestIdFor(req);
-      try {
-        assertSameOrigin(req);
-        const c = await resolveContext();
-        const params = flattenParams(await segment?.params);
-        const result = await handler({ c, req, url: new URL(req.url), params, requestId });
+      // Every log line written while this request is handled carries the request id.
+      return runWithRequestId(requestId, async () => {
+        try {
+          assertSameOrigin(req);
+          const c = await resolveContext();
+          const params = flattenParams(await segment?.params);
+          const result = await handler({ c, req, url: new URL(req.url), params, requestId });
 
-        if (result instanceof Response) return withRequestId(result, requestId);
-        if (options.status === 204)
-          return withRequestId(new Response(null, { status: 204 }), requestId);
-        if (result instanceof Paged) {
-          return json(
-            { data: result.items, meta: { nextCursor: result.nextCursor } },
-            200,
-            requestId,
-          );
+          if (result instanceof Response) return withRequestId(result, requestId);
+          if (options.status === 204)
+            return withRequestId(new Response(null, { status: 204 }), requestId);
+          if (result instanceof Paged) {
+            return json(
+              { data: result.items, meta: { nextCursor: result.nextCursor } },
+              200,
+              requestId,
+            );
+          }
+          return json({ data: result ?? null }, options.status ?? 200, requestId);
+        } catch (error) {
+          return errorResponse(error, requestId);
         }
-        return json({ data: result ?? null }, options.status ?? 200, requestId);
-      } catch (error) {
-        return errorResponse(error, requestId);
-      }
+      });
     };
   };
 }
 
-/** A client-supplied request id is kept only when it is a short, plain token (it is logged). */
-const CLIENT_REQUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/;
-
+/**
+ * A client may supply its own request id (to correlate with its logs), but only a short, plain
+ * one: it is echoed into response headers and every log line (request-context.ts decides).
+ */
 function requestIdFor(req: Request): string {
-  const supplied = req.headers.get("x-request-id");
-  if (supplied && CLIENT_REQUEST_ID.test(supplied)) return supplied;
-  return `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  return (
+    safeRequestId(req.headers.get("x-request-id")) ??
+    `req_${randomUUID().replace(/-/g, "").slice(0, 16)}`
+  );
 }
 
 /** Fetch-metadata values that mean "a page from another origin sent this". */
@@ -115,18 +121,20 @@ export function createWebhookRoute(resolveSystem: () => Promise<SystemContext>) 
   return function webhookRoute(handler: (args: WebhookArgs) => Promise<unknown>) {
     return async (req: Request): Promise<Response> => {
       const requestId = requestIdFor(req);
-      try {
-        const path = new URL(req.url).pathname;
-        if (!SIGNATURE_AUTHENTICATED_PATHS.includes(path)) {
-          throw new Error(`webhookRoute serves only signature-authenticated paths, not ${path}.`);
+      return runWithRequestId(requestId, async () => {
+        try {
+          const path = new URL(req.url).pathname;
+          if (!SIGNATURE_AUTHENTICATED_PATHS.includes(path)) {
+            throw new Error(`webhookRoute serves only signature-authenticated paths, not ${path}.`);
+          }
+          const rawBody = await readRawBody(req);
+          const result = await handler({ s: await resolveSystem(), req, rawBody, requestId });
+          if (result instanceof Response) return withRequestId(result, requestId);
+          return json({ data: result ?? null }, 200, requestId);
+        } catch (error) {
+          return errorResponse(error, requestId);
         }
-        const rawBody = await readRawBody(req);
-        const result = await handler({ s: await resolveSystem(), req, rawBody, requestId });
-        if (result instanceof Response) return withRequestId(result, requestId);
-        return json({ data: result ?? null }, 200, requestId);
-      } catch (error) {
-        return errorResponse(error, requestId);
-      }
+      });
     };
   };
 }

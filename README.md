@@ -43,6 +43,10 @@ AI works out of the box in **demo mode**: deterministic canned responses, clearl
 | `pnpm build`                     | production build                                                |
 | `pnpm db:generate --name <name>` | create a SQL migration after editing `src/lib/db/schema/*`      |
 | `pnpm db:migrate` · `db:seed`    | apply migrations / seed shared skills (PGlite or `DATABASE_URL`) |
+| `pnpm db:seed:demo`              | a demo student with every screen populated (local PGlite only; `--reset` to redo) |
+| `pnpm db:restore-check`          | prove a logical backup restores identically (in memory, about 5 s) |
+| `pnpm env:check`                 | would this environment be accepted in production? (names, never values) |
+| `pnpm vercel-build`              | what Vercel runs: check config, migrate, then build (does nothing locally) |
 
 ## Architecture in one screen
 
@@ -52,12 +56,17 @@ AI works out of the box in **demo mode**: deterministic canned responses, clearl
 - `src/lib/ai/run.ts` is the only door to a model: versioned prompts, schema-validated output, every call recorded in `ai_runs` (a hash of the prompt, never the prompt).
 - Auth: Better Auth with GitHub/Google OAuth in production.
 
-## Deploying (Vercel + Neon)
+## Deploy
 
-1. Create a Neon database and a Vercel project. Set these environment variables: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (your public origin), `GITHUB_CLIENT_ID/SECRET` and/or `GOOGLE_CLIENT_ID/SECRET`, `AI_MODE=live`, `AI_GATEWAY_API_KEY` (or the Vercel OIDC integration) and `AI_MODEL_CAPTURE/OPPORTUNITY/TUTOR/EXTRACTION`. Optionally `AUTH_ALLOWED_EMAILS` to invite-gate the pilot. **Never** set `AUTH_DEV_LOGIN` or `AI_MODE=demo` in production, and use a generated `BETTER_AUTH_SECRET` of at least 32 characters (the app refuses to start otherwise). Security notes: [`docs/SECURITY_REVIEW.md`](docs/SECURITY_REVIEW.md).
-2. OAuth callback URLs: `<origin>/api/auth/callback/github` and `<origin>/api/auth/callback/google`.
-3. Build command: `pnpm db:migrate && pnpm build` (migrations are plain SQL files in `drizzle/`).
+Vercel (the app) + Neon (Postgres). The deploy is built to fail safely: Vercel runs `vercel-build` (pinned in `vercel.json`), which checks the production configuration, applies the database migrations, then builds. If any step fails, nothing goes live and the current version keeps serving.
+
+- **First deploy:** follow [`docs/DEPLOY.md`](docs/DEPLOY.md), an ordered checklist (Neon, Vercel, Google and GitHub OAuth apps, AI Gateway key, pilot allow-list, first deploy, `pnpm eval`, smoke test). The steps that need your accounts are marked **OWNER**.
+- **Required in production:** `DATABASE_URL`, `BETTER_AUTH_SECRET` (32+ characters), `BETTER_AUTH_URL` (`https://`), at least one OAuth provider, and, when AI is on, `AI_GATEWAY_API_KEY` plus all four `AI_MODEL_*`. `AUTH_DEV_LOGIN` must stay unset (the app refuses to start). Check with `pnpm env:check`; every variable is described in [`docs/RUNBOOK.md`](docs/RUNBOOK.md#2-environment-variables).
+- **OAuth callback URLs:** `<APP_URL>/api/auth/callback/github` and `<APP_URL>/api/auth/callback/google`.
+- **Is it up?** `GET /api/health` returns `{"status":"ok","version":…,"db":"ok","time":…}`, or HTTP 503 when the database is unreachable or not migrated, or the configuration is invalid.
+- **Operating it:** [`docs/RUNBOOK.md`](docs/RUNBOOK.md) covers logs and request ids, rolling back, backup and restore, rotating secrets and an incident checklist.
+- **Security notes** (headers, auth gate, AI rate limit, data deletion): [`docs/SECURITY_REVIEW.md`](docs/SECURITY_REVIEW.md). **GitHub repository linking** is optional: [`docs/integrations/github-app.md`](docs/integrations/github-app.md).
 
 ## Documentation
 
-[`docs/SPEC.md`](docs/SPEC.md) product · [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) schema · [`docs/API.md`](docs/API.md) contract · [`docs/ACCEPTANCE_TESTS.md`](docs/ACCEPTANCE_TESTS.md) done-criteria and AI evals · [`docs/decisions/`](docs/decisions/) ADRs · [`docs/SPEC_REVIEW.md`](docs/SPEC_REVIEW.md) approved amendments · [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) plan · [`docs/superpowers/plans/`](docs/superpowers/plans/) per-slice plans.
+[`docs/SPEC.md`](docs/SPEC.md) product · [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) schema · [`docs/API.md`](docs/API.md) contract · [`docs/ACCEPTANCE_TESTS.md`](docs/ACCEPTANCE_TESTS.md) done-criteria and AI evals · [`docs/decisions/`](docs/decisions/) ADRs · [`docs/SPEC_REVIEW.md`](docs/SPEC_REVIEW.md) approved amendments · [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) plan · [`docs/superpowers/plans/`](docs/superpowers/plans/) per-slice plans · [`docs/DEPLOY.md`](docs/DEPLOY.md) first-deploy checklist · [`docs/RUNBOOK.md`](docs/RUNBOOK.md) operating it.
