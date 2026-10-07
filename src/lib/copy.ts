@@ -25,6 +25,8 @@ export const copy = {
   },
   nav: {
     sidebarLabel: "App sidebar",
+    // The avatar shows the student's initials, so the name starts with them (WCAG 2.5.3 Label in Name).
+    accountMenuLabel: (initials: string) => `${initials} Account menu`,
     today: "Today",
     learn: "Learn",
     projects: "Projects",

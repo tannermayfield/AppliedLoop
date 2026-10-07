@@ -64,11 +64,16 @@ async function checkAll(page: Page) {
   const problems: string[] = [];
   for (const [name, path] of await routes(page)) {
     await page.goto(path, { waitUntil: "networkidle" });
-    const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
+    const results = await new AxeBuilder({ page })
+      .withTags(TAGS)
+      // WCAG 2.5.3 Label in Name: axe ships this rule disabled ("experimental"), so switch it on.
+      .options({ rules: { "label-content-name-mismatch": { enabled: true } } })
+      .analyze();
     for (const violation of results.violations) {
+      // The element's own markup makes a finding actionable without opening the trace.
       const where = violation.nodes
-        .map((node) => node.target.join(" "))
         .slice(0, 3)
+        .map((node) => `${node.target.join(" ")} ${node.html.replace(/\s+/g, " ").slice(0, 140)}`)
         .join(" | ");
       problems.push(`${name}: ${violation.id} (${violation.nodes.length}) at ${where}`);
     }

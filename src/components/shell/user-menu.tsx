@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth/client";
+import { copy } from "@/lib/copy";
 import { settingsCopy } from "@/lib/copy-settings";
 
 function initials(name: string): string {
@@ -39,7 +40,12 @@ export function UserMenu({ name, email }: { name: string; email: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={copy.nav.accountMenuLabel(initials(name))}
+          className="rounded-full"
+        >
           <Avatar className="size-8">
             <AvatarFallback className="text-xs" aria-hidden>
               {initials(name)}

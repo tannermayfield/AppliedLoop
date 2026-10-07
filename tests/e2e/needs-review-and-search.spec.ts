@@ -71,7 +71,10 @@ test("Today, Learn, project and search: Needs Review is reachable, stage-aware a
     stage: "LEARNED",
     notes: "Remember: ROLLBACK undoes the whole unit of work",
   });
-  const joins = await api<Id>(page, "POST", "/api/v1/concepts", { name: "Joins", stage: "LEARNED" });
+  const joins = await api<Id>(page, "POST", "/api/v1/concepts", {
+    name: "Joins",
+    stage: "LEARNED",
+  });
   await api(page, "PATCH", `/api/v1/concepts/${joins.id}/progress`, {
     stage: "APPLIED",
     source: "USER",
@@ -97,9 +100,13 @@ test("Today, Learn, project and search: Needs Review is reachable, stage-aware a
   await test.step("Learn: the queue is there on first paint, above the concept groups", async () => {
     await expect(page.getByText("Loading Needs Review")).toHaveCount(0);
     const queue = page.locator("#needs-review");
-    await expect(queue.getByRole("link", { name: "Database transactions", exact: true })).toBeVisible();
+    await expect(
+      queue.getByRole("link", { name: "Database transactions", exact: true }),
+    ).toBeVisible();
     const queueTop = (await queue.boundingBox())!.y;
-    const firstGroupTop = (await page.getByRole("heading", { name: "Not from a source" }).boundingBox())!.y;
+    const firstGroupTop = (await page
+      .getByRole("heading", { name: "Not from a source" })
+      .boundingBox())!.y;
     expect(queueTop).toBeLessThan(firstGroupTop);
     // One Needs Review landmark on the page, not two stacked blocks.
     await expect(page.getByRole("region", { name: "Needs Review" })).toHaveCount(1);
@@ -115,22 +122,26 @@ test("Today, Learn, project and search: Needs Review is reachable, stage-aware a
       "href",
       `/evidence?conceptId=${joins.id}`,
     );
-    await expect(page.getByRole("link", { name: 'Practice "Joins" again in a project' })).toHaveAttribute(
-      "href",
-      `/apply/new?conceptId=${joins.id}`,
-    );
+    await expect(
+      page.getByRole("link", { name: 'Practice "Joins" again in a project' }),
+    ).toHaveAttribute("href", `/apply/new?conceptId=${joins.id}`);
   });
 
   await test.step("Learn filter: name, description or notes, and a calm no-match", async () => {
-    await page.getByLabel("Search your concepts").fill("rollback");
-    await page.getByLabel("Search your concepts").press("Enter");
+    const filter = page.getByRole("searchbox", { name: "Search your concepts" });
+    await filter.fill("rollback");
+    await filter.press("Enter");
     await expect(page).toHaveURL(/\/learn\?q=rollback/);
     await expect(page.getByText("1 concept matches “rollback”.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Common Table Expressions", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Common Table Expressions", exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "Joins", exact: true })).toHaveCount(0);
 
     await page.goto("/learn?q=zzzz-nothing");
-    await expect(page.getByRole("heading", { name: "No concepts match “zzzz-nothing”" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "No concepts match “zzzz-nothing”" }),
+    ).toBeVisible();
     await page.getByRole("link", { name: "Clear search" }).first().click();
     await expect(page.getByRole("link", { name: "Joins", exact: true })).toBeVisible();
   });
@@ -141,7 +152,9 @@ test("Today, Learn, project and search: Needs Review is reachable, stage-aware a
     await box.press("Enter");
     await expect(page).toHaveURL(/\/search\?q=transactions/);
     await expect(page.getByRole("heading", { name: "Concepts", level: 2 })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open concept Database transactions" })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open concept Database transactions" }),
+    ).toBeVisible();
     // % is a character, not a wildcard: nothing contains it, so nothing matches.
     await page.goto("/search?q=%25");
     await expect(page.getByRole("heading", { name: "Nothing matches “%”" })).toBeVisible();
@@ -153,7 +166,7 @@ test("Today, Learn, project and search: Needs Review is reachable, stage-aware a
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: "Recommended application" })).toBeVisible();
     const start = page.getByRole("link", {
-      name: "Start an Apply session for Caching in Adaptive Language",
+      name: "Start Apply: Caching in Adaptive Language",
     });
     await expect(start).toHaveAttribute(
       "href",
@@ -246,12 +259,18 @@ test("the student closes a Needs Review item after confirming Applied and after 
 
     await page.goto(`/sessions/${session.id}`);
     // Only a question until the student answers: nothing about Needs Review yet.
-    await expect(page.getByRole("heading", { name: "Mark Window functions as Applied?" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Mark Window functions as resolved?" })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Mark Window functions as Applied?" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Mark Window functions as resolved?" }),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(page.getByText("Marked as Applied.")).toBeVisible();
 
-    await expect(page.getByRole("heading", { name: "Mark Window functions as resolved?" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Mark Window functions as resolved?" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(
       page.getByText("Window functions is resolved and has left Needs Review."),
@@ -270,7 +289,10 @@ test("the student closes a Needs Review item after confirming Applied and after 
       name: "Recursion",
       stage: "LEARNED",
     });
-    await api(page, "POST", "/api/v1/learning-debt", { conceptName: "Recursion", projectId: project.id });
+    await api(page, "POST", "/api/v1/learning-debt", {
+      conceptName: "Recursion",
+      projectId: project.id,
+    });
     await api(page, "PATCH", `/api/v1/concepts/${concept.id}/progress`, {
       stage: "APPLIED",
       source: "USER",
@@ -323,11 +345,15 @@ test("the student closes a Needs Review item after confirming Applied and after 
     await page.getByRole("radio", { name: "Student-led" }).check();
     await page.getByRole("button", { name: "Save evidence" }).click();
 
-    await expect(page.getByRole("heading", { name: "Mark Schema validation as Demonstrated?" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Mark Schema validation as Demonstrated?" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(page.getByText("Schema validation is now Demonstrated.")).toBeVisible();
 
-    await expect(page.getByRole("heading", { name: "Mark Schema validation as resolved?" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Mark Schema validation as resolved?" }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(
       page.getByText("Schema validation is resolved and has left Needs Review."),
@@ -357,10 +383,18 @@ test("the manual form on the extraction page puts a concept into Needs Review, w
       goal: "Save practice results",
     });
     // The session is finished and saved; no AI is called, so the answer is "AI is off here".
-    await api(page, "POST", "/api/v1/extractions", { buildSessionId: session.id, summary: "Saved results." }, [409]);
+    await api(
+      page,
+      "POST",
+      "/api/v1/extractions",
+      { buildSessionId: session.id, summary: "Saved results." },
+      [409],
+    );
 
     await page.goto(`/sessions/${session.id}/extract`);
-    await expect(page.getByRole("heading", { name: "Add a concept to Needs Review" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Add a concept to Needs Review" }),
+    ).toBeVisible();
     await page.getByLabel("Concept name").fill("Database transactions");
     await page.getByRole("button", { name: "Add concept" }).click();
     await expect(page.getByText('Added "Database transactions" to Needs Review.')).toBeVisible();
@@ -375,7 +409,9 @@ test("the manual form on the extraction page puts a concept into Needs Review, w
     // Asking for the same concept again is calm and adds nothing.
     await page.getByLabel("Concept name").fill("database TRANSACTIONS");
     await page.getByRole("button", { name: "Add concept" }).click();
-    await expect(page.getByText('"Database transactions" is already in Needs Review.')).toBeVisible();
+    await expect(
+      page.getByText('"Database transactions" is already in Needs Review.'),
+    ).toBeVisible();
 
     const open = await list<{ conceptName: string; projectId: string; status: string }>(
       page,
@@ -395,11 +431,14 @@ test("the manual form on the extraction page puts a concept into Needs Review, w
     });
     await api(page, "POST", "/api/v1/extractions", {
       buildSessionId: session.id,
-      summary: "Added database transactions and schema validation to the practice-results save path.",
+      summary:
+        "Added database transactions and schema validation to the practice-results save path.",
     });
 
     await page.goto(`/sessions/${session.id}/extract`);
-    await expect(page.getByRole("heading", { name: "Potential concepts worth reviewing" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Potential concepts worth reviewing" }),
+    ).toBeVisible();
     // Candidates exist and none is added by being listed.
     await expect(page.getByRole("article").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "Add another concept" })).toBeVisible();

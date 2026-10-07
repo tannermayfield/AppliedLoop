@@ -78,7 +78,7 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
       .click();
     await expect(page).toHaveURL(/\/today/);
     const applyLink = page.getByRole("link", {
-      name: /Start an Apply session for (Common Table Expressions|SQL joins)/,
+      name: /Start Apply session: (Common Table Expressions|SQL joins)/,
     });
     await expect(applyLink.first()).toBeVisible();
     const label =

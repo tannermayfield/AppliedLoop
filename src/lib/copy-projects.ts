@@ -170,8 +170,7 @@ export const projectsCopy = {
     // The wireframe's "Recommended application" block: the concept Today would suggest, in this project.
     recommendedHeading: "Recommended application",
     recommendedBody: (project: string) => `Practice it inside ${project}.`,
-    recommendedLabel: (concept: string, project: string) =>
-      `Start an Apply session for ${concept} in ${project}`,
+    recommendedLabel: (concept: string, project: string) => `Start Apply: ${concept} in ${project}`,
     // Up to three Needs Review concept names, then a link to the whole queue on the Learning tab.
     needsReviewHeading: copy.needsReview.label,
     needsReviewMore: (count: number) => `and ${count} more`,
