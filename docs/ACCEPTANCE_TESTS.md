@@ -107,6 +107,16 @@ The source spec defines v0 success as one cycle. This test encodes it (Playwrigh
 10. Classifies one candidate *Add to Needs Review*, another *Ignore*. → exactly one `learning_debt_items` row (AT-15).
 11. Today now shows the Needs Review item; the `event_log` contains the activation → Apply → Extract funnel (AT-23).
 
+## Non-functional guards (SPEC §6)
+
+| Concern | Guard | Where |
+|---|---|---|
+| Accessibility (WCAG 2.2 AA) | axe-core (A/AA rules, best-practice, Label in Name) over 18 core screens of the seeded demo student at desktop/light and phone/dark, plus "never scrolls sideways" | `tests/e2e/a11y.spec.ts` |
+| Phone layout | evidence screens at 375 px with a very long unbroken title and link | `tests/e2e/evidence-mobile.spec.ts` |
+| Security headers and CSP | per-response nonce CSP, cross-site write refused, JSON API gets a locked-down CSP | `tests/e2e/security-headers.spec.ts` |
+| Query cost | a fixed statement budget per hot read; every foreign key has a covering index | `tests/integration/performance/statement-budget.test.ts`, `tests/integration/schema.test.ts` |
+| Real Postgres | the whole suite on `postgres:16` (deployed databases are Neon, not PGlite) | `.github/workflows/ci.yml`, job `postgres` |
+
 ## Definition of done
 
 Unchanged from `CLAUDE.md`: implementation compiles; relevant tests pass; lint/typecheck pass; schema/API docs remain accurate; the acceptance criterion is demonstrated.

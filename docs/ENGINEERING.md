@@ -8,7 +8,8 @@ How the code is organized and the patterns to follow. Product rules live in [/CL
 ## Commands (Windows; PowerShell or Git Bash)
 
 ```text
-pnpm test                       all tests (about 10 s; boots in-memory Postgres per file)
+pnpm test                       all tests (about 2-3 min on 4 cores; boots in-memory Postgres per file)
+TEST_DATABASE_URL=postgres://… pnpm test   the same suite on a real Postgres server (CI job `postgres`; a role that may CREATE DATABASE)
 pnpm vitest run <path>          a single file or folder
 pnpm typecheck                  tsc --noEmit
 pnpm lint                       eslint (use `pnpm exec eslint <paths>` for a subset)
@@ -21,7 +22,7 @@ pnpm db:seed:demo               the demo student, every screen populated (local 
 pnpm db:restore-check           prove a logical backup restores identically (in memory, about 5 s)
 pnpm env:check                  would this environment be accepted in production? (names, never values)
 pnpm vercel-build               what Vercel runs: check config, migrate, then build (does nothing locally)
-pnpm e2e                        Playwright (starts its own server on :3100)
+pnpm e2e                        Playwright (starts its own server on :3100 with the demo student seeded; includes the axe accessibility audit)
 pnpm eval                       AI evals against REAL models (costs money; needs a gateway key)
 ```
 
@@ -53,7 +54,7 @@ export async function createThing(c: AppContext, raw: CreateThingInput): Promise
 }
 ```
 
-- First argument is always `c: AppContext = { auth, db, ai, now }`. Use `c.now()` for time, never `new Date()`, so tests control the clock.
+- First argument is always `c: AppContext = { auth, db, ai, github, now }`. Use `c.now()` for time, never `new Date()`, so tests control the clock.
 - **Every query on a table with `user_id` includes `ownedBy(table.userId, c.auth)`.** For rows reached by id: `where(and(eq(t.id, id), ownedBy(t.userId, c.auth)))` then `requireRow(row, "Thing")`. Someone else's id and a missing id are both `NotFoundError` (404): never reveal existence. Never accept a user id from input.
 - Join tables (`concept_skills`, `project_skills`, `evidence_*`) have no `user_id`: reach them only through a parent you have already ownership-checked.
 - Multi-row state changes run in `inTransaction(c, async (tx) => …)`. **Never call `runAi` inside a transaction.**
@@ -83,7 +84,8 @@ export const POST = apiRoute(async ({ c, req }) => createThing(c, await parseBod
 ## Database
 
 - Schema: `src/lib/db/schema/{enums,identity,catalog,activity}.ts`. Enum value lists are exported as const tuples (`CONCEPT_STAGES`, …); use them in Zod (`z.enum(CONCEPT_STAGES)`).
-- Local dev and ALL tests use PGlite (embedded Postgres, no install). Deployed environments use Neon through `DATABASE_URL`. Same SQL migrations on both.
+- Local dev and the tests use PGlite (embedded Postgres, no install); setting `TEST_DATABASE_URL` runs the same suite on a real server, which CI does once per push. Deployed environments use Neon through `DATABASE_URL`. Same SQL migrations on both.
+- Domain readers that fan out with `Promise.all` (evidence hydration, Today) run those queries on one connection when called inside `inTransaction`, which the demo seed does for atomicity. `pg` 8 queues them and prints a deprecation warning on a real server (three tests: `demo-seed*`, `restore-check`); `pg` 9 will not queue them, so run such calls one after another before upgrading `pg`. The `postgres` CI job is what would catch it.
 - Foreign keys between user-owned tables use `ON DELETE CASCADE` / `SET NULL`, never `NO ACTION`: PostgreSQL checks `NO ACTION` per cascade step, which breaks account deletion. "Don't delete things that are in use" is enforced in the domain layer (archive instead).
 - **Schema changes:** edit the schema files, run `pnpm db:generate --name <short-name>`, commit the generated SQL, never hand-edit generated migrations, add a test in `tests/integration/schema.test.ts`, and update `docs/DATA_MODEL.md` ("Implementation notes"). Parallel work: only one person changes the schema at a time.
 - **Every foreign key needs an index that starts with its columns** (Postgres does not create one): without it each cascade, `SET NULL` and "what points at this row" lookup scans the child table. `tests/integration/schema.test.ts` reads the live catalog and fails for a foreign key without one.
@@ -130,7 +132,7 @@ app.clock.advance(60_000);                                 // controllable time
 - Server components fetch via `const c = await getPageContext()` (redirects to /sign-in) and call domain functions directly. Interactive islands are small `"use client"` components that call route handlers (`fetch("/api/v1/…")`) or server actions. Mutations: show pending state, handle errors with the `{ error: { message } }` envelope, `router.refresh()` after success.
 - Components: shadcn/ui in `src/components/ui/*` (Radix), shell in `src/components/shell/*`, shared pieces `PageHeader`, `EmptyState`, `ModeBadge` (Apply = teal tutor mode, Build = amber AI-allowed: ALWAYS use it, never ad-hoc colors), `StageBadge`. Design tokens in `src/app/globals.css` (`bg-apply-soft`, `text-build-ink`, …); headings use `font-display`.
 - **All product wording lives in `src/lib/copy.ts` or a `src/lib/copy-<area>.ts` file you create** (don't edit another area's copy file). The UI says "Needs Review"; code/DB/API say `learning_debt`. Never tell a student what they do or don't understand; no streaks, scores or percentages; calm, specific, honest.
-- Every list has an empty state (what it is for + the one next step), every async action a pending state, every failure a message that says what to do next. Mobile first: 16 px gutters, no horizontal scroll, tab bar on phones. Accessibility: labels on every input, visible focus, keyboard operable, `aria-live` for async status, 4.5:1 contrast, respect reduced motion.
+- Every list has an empty state (what it is for + the one next step), every async action a pending state, every failure a message that says what to do next. Mobile first: 16 px gutters, no horizontal scroll, tab bar on phones. Accessibility: labels on every input, visible focus, keyboard operable, `aria-live` for async status, 4.5:1 contrast, respect reduced motion. `tests/e2e/a11y.spec.ts` runs axe-core (WCAG 2.0-2.2 A/AA, best-practice, and Label in Name) over every core screen on desktop/light and phone/dark and fails on any finding or sideways scroll: a new screen goes into its route list. An accessible name that adds context starts with the visible text ("Start Apply: Joins", not "Start an Apply session for Joins"). Several `role="search"` forms on one page each need their own name.
 - Routes (so slices agree on links): `/today` `/learn` (`/learn?q=` filters concepts; `/learn#needs-review` is the queue) `/search?q=` (the box in the app frame opens it) `/projects` `/projects/new` `/projects/[id]` · `/apply/new?projectId=&conceptId=` · `/build/new?projectId=` · `/sessions/[id]` (mode-aware) · `/sessions/[id]/extract` · `/evidence` `/evidence/new?sessionId=&projectId=&conceptId=` `/evidence/[id]` · `/settings` (account menu, not a primary nav item: profile, AI-data disclosure, data export, account deletion) · `/onboarding` (outside the shell).
 
 ## Security (see [SECURITY_REVIEW.md](SECURITY_REVIEW.md))

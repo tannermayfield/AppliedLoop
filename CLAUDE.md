@@ -89,5 +89,11 @@ A task is complete only when:
 - Do not commit or add dependencies unless the product owner asks.
 
 ## Status
-v0 build in progress (started 2026-10-05). Foundation done: schema + migrations, auth, AI core, telemetry,
-app shell, test harness. Slices follow docs/superpowers/plans/.
+v1 feature-complete (2026-10-07): all P0 plus P1 (GitHub linking and artifact selection, search/filter,
+context snapshots), self-serve account export and deletion, security hardening, an axe accessibility
+guard in E2E, and deploy readiness (docs/DEPLOY.md). In the build sandbox `pnpm lint`, `typecheck`,
+`test` (also on a real Postgres 16 via `TEST_DATABASE_URL`), `build` and `e2e` pass. Not verifiable
+there, so still open and the owner's to do: the Neon/Vercel deploy and OAuth apps, one live-model
+`pnpm eval` run (Apply leakage rate), and registering the GitHub App (tested only against fakes).
+Behavior decisions made under the owner's blanket go-ahead are logged in docs/SPEC_REVIEW.md. The slice
+plans in docs/superpowers/plans/ are history, not a to-do list.

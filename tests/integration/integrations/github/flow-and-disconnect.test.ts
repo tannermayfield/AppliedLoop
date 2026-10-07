@@ -107,7 +107,14 @@ describe("GitHub end to end: connect → link → pick → attach → disconnect
         githubArtifactId: attached.id,
       }),
     ];
-    for (const attempt of attempts) await expect(attempt).rejects.toBeInstanceOf(ConflictError);
+    // Started together, so each one needs its rejection handler attached at once: awaiting them one
+    // by one leaves a later rejection unhandled for a moment (Node reports it, and a real Postgres
+    // server settles them in a different order than PGlite does).
+    const settled = await Promise.allSettled(attempts);
+    for (const result of settled) {
+      expect(result.status).toBe("rejected");
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
     expect(app.github.calls.length).toBe(callsBefore);
   });
 

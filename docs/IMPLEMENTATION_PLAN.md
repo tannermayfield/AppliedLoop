@@ -12,6 +12,7 @@
 
 > **Status:** draft for owner approval, Day 0, 2026-10-05.
 > **Update 2026-10-06:** the owner approved building v1 (P0 + P1). P1 GitHub repository linking and artifact selection is implemented (AT-18, AT-19) behind optional `GITHUB_APP_*` env vars; registering the GitHub App is an owner action ([integrations/github-app.md](integrations/github-app.md)). `lib/integrations/` (below) is no longer empty.
+> **Update 2026-10-07:** v1 is built: all P0 plus P1 (GitHub linking and artifact selection, search/filter, context snapshots), account export and deletion, security hardening, an accessibility guard in E2E, and deploy readiness ([DEPLOY.md](DEPLOY.md)). What remains is owner work that needs real accounts (Neon, Vercel, OAuth apps, the AI Gateway key, the GitHub App) and one live-model `pnpm eval` run; see the deploy checklist. The per-slice plans in `docs/superpowers/plans/` are history, not a to-do list.
 > **Inputs:** [SPEC](SPEC.md) · [DATA_MODEL](DATA_MODEL.md) · [API](API.md) · [ACCEPTANCE_TESTS](ACCEPTANCE_TESTS.md) · [SPEC_REVIEW](SPEC_REVIEW.md) · [ADRs](decisions/).
 > This plan changes no product behavior. Where a task relies on a **proposed** amendment it says so (`R-xx`). It contains no code on purpose: exact code needs the stack and the amendments to be final.
 
