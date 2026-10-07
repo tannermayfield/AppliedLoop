@@ -70,12 +70,8 @@ describe("loadEnv", () => {
 
   // SECURITY_REVIEW L-7: canned demo answers must never reach students in a deployed app.
   it("refuses to boot in production with demo AI", () => {
-    expect(() =>
-      loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: SECRET, AI_MODE: "demo" }),
-    ).toThrow(/AI_MODE=demo/);
-    expect(
-      loadEnv({ NODE_ENV: "production", BETTER_AUTH_SECRET: SECRET, AI_MODE: "off" }).aiMode,
-    ).toBe("off");
+    expect(() => loadEnv(productionEnv({ AI_MODE: "demo" }))).toThrow(/AI_MODE/);
+    expect(loadEnv(productionEnv({ AI_MODE: "off" })).aiMode).toBe("off");
   });
 
   // SECURITY_REVIEW M-4: the secret signs the session cookie cache; a guessable one forges sessions.

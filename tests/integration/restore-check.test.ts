@@ -48,6 +48,20 @@ const KNOWN_TABLES = [
   "users",
 ];
 
+/**
+ * Tables the demo student has no rows in: GitHub connections come from a real OAuth/App install,
+ * which a seed cannot fake. The export and import walk the whole schema, so they still round-trip
+ * (empty), and the restore drill's `notExercised` list names them.
+ */
+const UNEXERCISED_TABLES = [
+  "github_artifacts",
+  "github_connect_states",
+  "github_repositories",
+  "github_webhook_deliveries",
+  "integrations",
+  "project_repositories",
+];
+
 describe("the restore check end to end", () => {
   it("restores every table identically, and says how it knows", async () => {
     const report = await runRestoreCheck(now);
@@ -93,7 +107,9 @@ describe("exporting and importing", () => {
       exportedAt: NOW.toISOString(),
     });
     expect(dump.migrations.count).toBeGreaterThanOrEqual(1);
-    expect(Object.keys(dump.tables).sort()).toEqual(KNOWN_TABLES);
+    expect(Object.keys(dump.tables).sort()).toEqual(
+      [...KNOWN_TABLES, ...UNEXERCISED_TABLES].sort(),
+    );
   });
 
   it("round-trips a database with identical content in every table", async () => {

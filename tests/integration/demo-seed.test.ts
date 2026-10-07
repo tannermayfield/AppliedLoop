@@ -110,16 +110,13 @@ describe("demo seed", () => {
     expect(page.items.every((concept) => concept.capturedAt.getTime() <= NOW.getTime())).toBe(true);
   });
 
-  it("populates Today with all four cards, read through the real getToday", async () => {
+  it("populates Today with resume, review and apply cards, read through the real getToday", async () => {
     const { userId } = await seedDemo(app.db, { now });
     const today = await getToday(ctxFor(userId));
 
-    expect(today.cards.map((card) => card.type)).toEqual([
-      "RESUME",
-      "NEEDS_REVIEW",
-      "APPLY",
-      "BUILD",
-    ]);
+    // No "Start Build session" card: the project's Build session is in progress, so Today offers
+    // to resume it instead of starting a second one (journeys audit F-03).
+    expect(today.cards.map((card) => card.type)).toEqual(["RESUME", "NEEDS_REVIEW", "APPLY"]);
     const byType = Object.fromEntries(today.cards.map((card) => [card.type, card]));
     expect(byType.APPLY).toMatchObject({
       conceptName: "Common Table Expressions",
@@ -127,7 +124,7 @@ describe("demo seed", () => {
     });
     expect(byType.NEEDS_REVIEW).toMatchObject({ conceptName: "Database migrations" });
     expect(byType.RESUME).toMatchObject({ sessionType: "BUILD", projectName: "Adaptive Language" });
-    expect(byType.BUILD).toMatchObject({ projectName: "Adaptive Language" });
+    expect(byType.BUILD).toBeUndefined();
     expect(today.needsReview).toMatchObject({ count: 1 });
     expect(today).toMatchObject({
       greetingName: "Demo",

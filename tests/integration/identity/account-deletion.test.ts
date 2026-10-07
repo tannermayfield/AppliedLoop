@@ -18,7 +18,10 @@ describe("account deletion", () => {
   });
   afterAll(() => app.close());
   beforeEach(() => app.reset());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
   /** Two students. Bob's email contains Alice's, to prove one-time tokens are matched exactly. */
   async function twoStudents() {
@@ -184,6 +187,7 @@ describe("account deletion", () => {
   describe("what survives", () => {
     it("emits no telemetry and logs one anonymous line without an id, an email or a count", async () => {
       const { alice, baseline } = await twoStudents();
+      vi.stubEnv("LOG_LEVEL", "info"); // the line is info level; tests log at warn and above by default
       const lines: string[] = [];
       const capture = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
       vi.spyOn(console, "log").mockImplementation(capture);

@@ -217,10 +217,10 @@ describe("production environment: AI configuration", () => {
     expect(names(check)).toEqual(["AI_MODEL_TUTOR"]);
   });
 
-  it("allows an explicit AI_MODE=demo but says so loudly (it is a choice, never a default)", () => {
+  it("refuses AI_MODE=demo in production: canned answers must never reach students (L-7)", () => {
     const check = validateEnv(productionEnv({ AI_MODE: "demo" }));
-    expect(check.ok).toBe(true);
-    expect(check.warnings.join("\n")).toMatch(/Demo AI/);
+    expect(check.ok).toBe(false);
+    expect(names(check)).toEqual(["AI_MODE"]);
   });
 
   it("an explicit AI_MODE=off with a key stays off and needs no model ids", () => {

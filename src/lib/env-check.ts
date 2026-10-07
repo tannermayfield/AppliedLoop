@@ -213,7 +213,11 @@ export function checkEnvironment(source: EnvSource, raw: RawEnvSubset): EnvCheck
   } else if (aiMode === "off") {
     warnings.push("AI is off (no AI_GATEWAY_API_KEY): AI steps fall back to the manual flows.");
   } else {
-    warnings.push("AI_MODE=demo in production: students get canned answers labelled Demo AI.");
+    // SECURITY_REVIEW L-7: canned answers must never reach students in a deployed app.
+    problem(
+      "AI_MODE",
+      "demo is for development only (students would get canned answers). Use live, or off to keep the manual flows.",
+    );
   }
 
   for (const name of Object.keys(source)) {
