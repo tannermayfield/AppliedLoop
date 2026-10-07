@@ -180,6 +180,26 @@ describe("evidence", () => {
       ).rejects.toBeInstanceOf(ValidationError);
     });
 
+    it("requires a contribution type and never fills one in (it is the student's honest answer)", async () => {
+      const alice = await app.makeUser();
+      const project = await insertProject(app.db, alice.id);
+      const withoutContribution = { ...base, projectId: project.id } as Partial<typeof base>;
+      delete withoutContribution.contributionType;
+      await expect(
+        createEvidence(alice.ctx, withoutContribution as typeof base & { projectId: string }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      for (const blank of [null, ""]) {
+        await expect(
+          createEvidence(alice.ctx, {
+            ...base,
+            projectId: project.id,
+            contributionType: blank as unknown as "STUDENT_LED",
+          }),
+        ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+      }
+      expect(await app.db.select().from(evidenceItems)).toHaveLength(0);
+    });
+
     describe("suggested advances", () => {
       it("suggests Demonstrated for concepts below it when there is an explanation and an artifact", async () => {
         const alice = await app.makeUser();
@@ -382,7 +402,6 @@ describe("evidence", () => {
         explanation: "Because it names the step.",
         conceptIds: [concept.id],
         skillIds: [skill.id],
-        contributionType: "STUDENT_LED",
       });
     });
 
@@ -400,7 +419,7 @@ describe("evidence", () => {
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
-    it("prefills a Build session as Mixed / unsure with the build summary as description", async () => {
+    it("prefills a Build session with the build summary as description", async () => {
       const alice = await app.makeUser();
       const project = await insertProject(app.db, alice.id);
       const session = await insertSession(app.db, alice.id, project.id, {
@@ -411,10 +430,31 @@ describe("evidence", () => {
       const prefill = await getEvidencePrefill(alice.ctx, { sessionId: session.id });
       expect(prefill).toMatchObject({
         projectId: project.id,
-        contributionType: "MIXED_UNSURE",
         description: "Added the learner profile page.",
         conceptIds: [],
       });
+    });
+
+    // Product rule (docs/API.md: "required and never inferred"): the student's honest label for
+    // how the work was made is never guessed from the kind of session. This replaces two earlier
+    // assertions that pinned the inference (Apply -> STUDENT_LED, Build -> MIXED_UNSURE).
+    it("never infers how the work was made: contributionType is null for Apply and Build", async () => {
+      const alice = await app.makeUser();
+      const apply = await insertApplySetup(app.db, alice.id, {
+        session: { status: "COMPLETED", completedAt: new Date() },
+      });
+      const project = await insertProject(app.db, alice.id);
+      const build = await insertSession(app.db, alice.id, project.id, {
+        type: "BUILD",
+        status: "COMPLETED",
+        summary: "Added the learner profile page.",
+      });
+      for (const sessionId of [apply.session.id, build.id]) {
+        const prefill = await getEvidencePrefill(alice.ctx, { sessionId });
+        // Present and null (not missing), so an API client sees an explicit "nothing chosen".
+        expect(prefill).toHaveProperty("contributionType", null);
+        expect(JSON.parse(JSON.stringify(prefill))).toHaveProperty("contributionType", null);
+      }
     });
 
     it("is NOT_FOUND for someone else's session", async () => {

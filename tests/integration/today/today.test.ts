@@ -1,7 +1,13 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { getToday, partOfDay } from "@/domain/today/today";
-import { conceptProgress, eventLog, userProfiles } from "@/lib/db/schema";
+import { MAX_OPEN_DEBT_ROWS, getToday, partOfDay } from "@/domain/today/today";
+import {
+  conceptProgress,
+  concepts,
+  eventLog,
+  learningDebtItems,
+  userProfiles,
+} from "@/lib/db/schema";
 import { createTestApp, type TestApp } from "@/test/app";
 import { insertSkill, insertSource } from "@/test/factories";
 import { insertDebtItem, linkConceptSkill, linkProjectSkill } from "@/test/factories-learning";
@@ -208,6 +214,45 @@ describe("getToday", () => {
         { conceptId: a.id, name: "Database transactions" },
         { conceptId: b.id, name: "JWT" },
       ],
+    });
+  });
+
+  it("reads at most MAX_OPEN_DEBT_ROWS open items, most relevant first, and still counts them all", async () => {
+    const alice = await app.makeUser();
+    const extra = 3;
+    const total = MAX_OPEN_DEBT_ROWS + extra;
+    // Raw bulk inserts: one concept per item (a concept has at most one open item).
+    const inserted = await app.db
+      .insert(concepts)
+      .values(
+        Array.from({ length: total }, (_, n) => ({
+          userId: alice.id,
+          name: `Concept ${n}`,
+          normalizedName: `concept ${n}`,
+        })),
+      )
+      .returning({ id: concepts.id, name: concepts.name });
+    const byNumber = new Map(inserted.map((row) => [Number(row.name.split(" ")[1]), row.id]));
+    // The newest item is PINNED: it must survive the cap, and lead the strip.
+    await app.db.insert(learningDebtItems).values(
+      Array.from({ length: total }, (_, n) => ({
+        userId: alice.id,
+        conceptId: byNumber.get(n)!,
+        pinned: n === total - 1,
+        createdAt: new Date(ago(60).getTime() + n * 60_000),
+      })),
+    );
+
+    const view = await getToday(alice.ctx);
+
+    expect(view.needsReview.count).toBe(total); // exact, although only the cap was read
+    expect(view.needsReview.top[0]).toEqual({
+      conceptId: byNumber.get(total - 1),
+      name: `Concept ${total - 1}`,
+    });
+    expect(view.cards[0]).toMatchObject({
+      type: "NEEDS_REVIEW",
+      conceptName: `Concept ${total - 1}`,
     });
   });
 

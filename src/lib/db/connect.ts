@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import type { Logger } from "drizzle-orm";
 import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { migrate as migrateNodePg } from "drizzle-orm/node-postgres/migrator";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
@@ -66,8 +67,16 @@ export function defaultMigrationsFolder(): string {
   return path.join(process.cwd(), "drizzle");
 }
 
+/** Optional drizzle query logger (tests use it to count statements). */
+export interface ConnectOptions {
+  logger?: Logger;
+}
+
 /** Embedded Postgres. `dataDir` undefined (or ":memory:") gives a throwaway in-memory database. */
-export async function connectPglite(dataDir?: string): Promise<DbHandle> {
+export async function connectPglite(
+  dataDir?: string,
+  options: ConnectOptions = {},
+): Promise<DbHandle> {
   let client: PGlite;
   if (dataDir && dataDir !== ":memory:") {
     const absolute = path.resolve(dataDir);
@@ -77,7 +86,7 @@ export async function connectPglite(dataDir?: string): Promise<DbHandle> {
     client = new PGlite();
   }
   await client.waitReady;
-  const db = drizzlePglite({ client, schema });
+  const db = drizzlePglite({ client, schema, logger: options.logger });
   return {
     db,
     kind: "pglite",
@@ -88,7 +97,7 @@ export async function connectPglite(dataDir?: string): Promise<DbHandle> {
 }
 
 /** A real Postgres server (Neon when deployed). Uses a pool so interactive transactions work. */
-export function connectPostgres(connectionString: string): DbHandle {
+export function connectPostgres(connectionString: string, options: ConnectOptions = {}): DbHandle {
   const pool = new Pool({
     connectionString,
     max: 10,
@@ -102,7 +111,7 @@ export function connectPostgres(connectionString: string): DbHandle {
   pool.on("error", (error) => {
     logger.error("An idle database connection failed", errorFields(error));
   });
-  const db = drizzleNodePg({ client: pool, schema });
+  const db = drizzleNodePg({ client: pool, schema, logger: options.logger });
   return {
     db,
     kind: "postgres",

@@ -71,6 +71,12 @@ export const userProfiles = pgTable("user_profiles", {
   program: text("program"),
   cohort: text("cohort"),
   timezone: text("timezone").notNull().default("UTC"),
+  /**
+   * True once the student saved a time zone themselves (Settings, or `timezone` on PATCH
+   * /me/profile). While false and the zone is still the default, the app may adopt the browser's
+   * zone once; once true, nothing replaces it (`src/lib/time-zone.ts`).
+   */
+  timezoneChosen: boolean("timezone_chosen").notNull().default(false),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   preferencesJson: jsonb("preferences_json").$type<Record<string, unknown>>().notNull().default({}),
 });

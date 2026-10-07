@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { inTransaction, type AppContext } from "@/lib/context";
 import { SESSION_ERRORS, SESSION_LIMITS, SESSION_VALIDATION } from "@/lib/copy-sessions";
@@ -186,6 +186,13 @@ export interface SessionSummaryDto extends SessionDto {
 
 // ── Read ─────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The most thread messages one `getSession` returns: the newest ones, oldest first. A tutor thread
+ * is dozens of messages, so this only protects the page from a pathological one; older messages
+ * stay stored.
+ */
+export const MAX_THREAD_MESSAGES = 500;
+
 /** One session with everything its page needs. Someone else's id is NOT_FOUND. */
 export async function getSession(c: AppContext, sessionId: string): Promise<SessionDetailDto> {
   const row = await loadOwnedSession(c, sessionId);
@@ -194,11 +201,13 @@ export async function getSession(c: AppContext, sessionId: string): Promise<Sess
   const opportunity = row.opportunityId
     ? await loadOwnedOpportunity(c, row.opportunityId)
     : null;
-  const messages = await c.db
+  const newest = await c.db
     .select()
     .from(sessionMessages)
     .where(and(eq(sessionMessages.sessionId, row.id), ownedBy(sessionMessages.userId, c.auth)))
-    .orderBy(asc(sessionMessages.createdAt), asc(sessionMessages.id));
+    .orderBy(desc(sessionMessages.createdAt), desc(sessionMessages.id))
+    .limit(MAX_THREAD_MESSAGES);
+  const messages = newest.reverse();
   const [child] =
     row.type === "APPLY"
       ? await c.db

@@ -42,7 +42,13 @@ export function ProfileForm({ name, email, timezone, timeZones }: Props) {
     try {
       const me = await apiRequest<{ name: string; profile: { timezone: string } }>(
         "/api/v1/me/profile",
-        { method: "PATCH", body: { displayName, timezone: zone } },
+        {
+          method: "PATCH",
+          // Sending a zone records it as the student's own choice (the browser's zone is never
+          // adopted over it), so send it only when they changed it: saving just a new name must
+          // not turn an automatically detected zone into a "chosen" one.
+          body: { displayName, ...(zone !== timezone ? { timezone: zone } : {}) },
+        },
       );
       setDisplayName(me.name);
       setZone(me.profile.timezone);

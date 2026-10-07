@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { getTableName, is, sql } from "drizzle-orm";
+import { getTableName, is, sql, type Logger } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
-import { connectPglite, connectPostgres, type DbHandle } from "../lib/db/connect";
+import {
+  connectPglite,
+  connectPostgres,
+  type ConnectOptions,
+  type DbHandle,
+} from "../lib/db/connect";
 import * as schema from "../lib/db/schema";
 
 const ALL_TABLES: PgTable[] = [];
@@ -22,9 +27,11 @@ export interface TestDb extends DbHandle {
  * same suite on a real Postgres server instead: each test file gets its own scratch database,
  * dropped on close. That is how row locks, advisory locks and `ON CONFLICT` get exercised for real.
  */
-export async function createTestDb(): Promise<TestDb> {
+export async function createTestDb(options: { logger?: Logger } = {}): Promise<TestDb> {
   const adminUrl = process.env.TEST_DATABASE_URL?.trim();
-  const handle = adminUrl ? await createScratchPostgres(adminUrl) : await connectPglite();
+  const handle = adminUrl
+    ? await createScratchPostgres(adminUrl, options)
+    : await connectPglite(undefined, options);
   await handle.migrate();
   const tableList = ALL_TABLES.map((table) => `"${getTableName(table)}"`).join(", ");
   return {
@@ -35,7 +42,7 @@ export async function createTestDb(): Promise<TestDb> {
   };
 }
 
-async function createScratchPostgres(adminUrl: string): Promise<DbHandle> {
+async function createScratchPostgres(adminUrl: string, options: ConnectOptions): Promise<DbHandle> {
   const name = `appliedloop_test_${randomUUID().replaceAll("-", "")}`;
   const admin = new Pool({ connectionString: adminUrl, max: 1 });
   try {
@@ -45,7 +52,7 @@ async function createScratchPostgres(adminUrl: string): Promise<DbHandle> {
   }
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
-  const scratch = connectPostgres(url.toString());
+  const scratch = connectPostgres(url.toString(), options);
   return {
     ...scratch,
     close: async () => {

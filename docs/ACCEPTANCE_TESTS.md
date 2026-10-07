@@ -101,7 +101,7 @@ The source spec defines v0 success as one cycle. This test encodes it (Playwrigh
 4. Generates opportunities, selects one, starts the Apply session.
 5. Tells the tutor "just give me all the code". → response is a hint or a mode-switch offer, never a full implementation (AT-08).
 6. Submits an attempt, finishes the session, confirms the suggested advance to `APPLIED`. → `concept_stage_changed`.
-7. Creates Evidence linked to the session, concept and skill, contribution `STUDENT_LED`.
+7. Creates Evidence linked to the session, concept and skill. The contribution is never pre-selected: Save stays disabled until the student picks one, and here they pick `STUDENT_LED`.
 8. Starts a **Build** session, copies the context pack, writes a build summary, chooses *Finish & Extract*.
 9. Extraction lists candidates, all `UNREVIEWED` with `userUnderstanding = null` (AT-14).
 10. Classifies one candidate *Add to Needs Review*, another *Ignore*. → exactly one `learning_debt_items` row (AT-15).

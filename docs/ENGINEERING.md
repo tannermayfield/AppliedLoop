@@ -60,7 +60,8 @@ export async function createThing(c: AppContext, raw: CreateThingInput): Promise
 - Zod schemas live next to the function that uses them and are exported (route handlers reuse them).
 - Throw `DomainError` subclasses from `@/lib/errors` (`NotFoundError`, `ConflictError`, `ValidationError`, …). Use `ConflictError` for "valid request, wrong state" (409).
 - Return plain rows/DTOs (JSON-serializable). Dates serialize to ISO strings.
-- Emit telemetry from the domain function, not the UI. Event names are fixed in `src/lib/telemetry/events.ts`; add new ones there first. `emit` never throws.
+- Emit telemetry from the domain function, not the UI. Event names are fixed in `src/lib/telemetry/events.ts`; add new ones there first. `emit` never throws. It is awaited on purpose, even on a GET (an unawaited write can be cut off when a serverless instance freezes, and the events feed the KPIs): outside a transaction it is one statement. Use `emitMany` for several events of one kind (one statement, one savepoint).
+- Keep hot reads at a fixed number of statements: multi-row inserts instead of an insert per item, one query for "the children of these ids" instead of one per row, and a cap (with an exact count where the UI shows one) on any list that can grow without bound. `tests/integration/performance/statement-budget.test.ts` counts the statements of Today, the Learn list, the Evidence list and the session load (`app.recordStatements`) and fails if they grow with the data or pass their ceiling.
 
 ## Route handlers
 
@@ -85,6 +86,7 @@ export const POST = apiRoute(async ({ c, req }) => createThing(c, await parseBod
 - Local dev and ALL tests use PGlite (embedded Postgres, no install). Deployed environments use Neon through `DATABASE_URL`. Same SQL migrations on both.
 - Foreign keys between user-owned tables use `ON DELETE CASCADE` / `SET NULL`, never `NO ACTION`: PostgreSQL checks `NO ACTION` per cascade step, which breaks account deletion. "Don't delete things that are in use" is enforced in the domain layer (archive instead).
 - **Schema changes:** edit the schema files, run `pnpm db:generate --name <short-name>`, commit the generated SQL, never hand-edit generated migrations, add a test in `tests/integration/schema.test.ts`, and update `docs/DATA_MODEL.md` ("Implementation notes"). Parallel work: only one person changes the schema at a time.
+- **Every foreign key needs an index that starts with its columns** (Postgres does not create one): without it each cascade, `SET NULL` and "what points at this row" lookup scans the child table. `tests/integration/schema.test.ts` reads the live catalog and fails for a foreign key without one.
 - **A new table must be classified for account export and deletion.** Give it a foreign key to `users` with `ON DELETE CASCADE` (or to a user-owned parent) so `DELETE /me` removes it, then add it to `DATA_EXPORT_COVERAGE` in `src/domain/identity/data-export.ts` (exported, or excluded with a reason; list any withheld columns in `EXPORT_OMITTED_COLUMNS`). `tests/integration/identity/*` walk the whole schema and fail until you do. A table with no foreign-key path to `users` also needs an entry in `src/test/schema-tables.ts`.
 
 ## AI

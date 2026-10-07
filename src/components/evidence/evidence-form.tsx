@@ -35,7 +35,8 @@ export interface EvidenceFormValues {
   artifactUrl: string;
   /** Set while the link is a GitHub item picked in this form (P1). */
   githubArtifactId?: string | null;
-  contributionType: ContributionType;
+  /** `null` until the student picks one: how the work was made is never inferred or pre-selected. */
+  contributionType: ContributionType | null;
   conceptIds: string[];
   skillIds: string[];
 }
@@ -85,7 +86,9 @@ export function EvidenceForm({
     setValues((current) => ({ ...current, [key]: value }));
 
   /** Editing the link by hand makes it a plain pasted link again. */
-  const setArtifact = (patch: Partial<Pick<EvidenceFormValues, "artifactType" | "artifactUrl">>) => {
+  const setArtifact = (
+    patch: Partial<Pick<EvidenceFormValues, "artifactType" | "artifactUrl">>,
+  ) => {
     setValues((current) => ({ ...current, ...patch, githubArtifactId: null }));
     setPickedTitle(null);
   };
@@ -98,6 +101,11 @@ export function EvidenceForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Save is disabled until the student chooses, so this is only a backstop (e.g. a scripted submit).
+    if (values.contributionType === null) {
+      setFieldErrors({ contributionType: copy.contributionRequired });
+      return;
+    }
     setPending(true);
     setError(null);
     setFieldErrors({});
@@ -161,6 +169,7 @@ export function EvidenceForm({
   const chosenSkills = catalog.filter((skill) => values.skillIds.includes(skill.id));
   const needsLink = values.artifactType !== "NOTE";
   const githubRepo = githubRepos[values.projectId];
+  const awaitingContribution = values.contributionType === null;
 
   return (
     <form onSubmit={submit} className="bg-card grid max-w-2xl gap-5 rounded-2xl border p-4 sm:p-6">
@@ -347,7 +356,10 @@ export function EvidenceForm({
                 ? githubCopy.artifactPicker.picked(pickedTitle)
                 : githubCopy.artifactPicker.from(githubRepo)}
             </p>
-            <FieldError id="evidence-github-artifact-error" message={fieldErrors.githubArtifactId} />
+            <FieldError
+              id="evidence-github-artifact-error"
+              message={fieldErrors.githubArtifactId}
+            />
           </div>
         )}
       </div>
@@ -355,9 +367,17 @@ export function EvidenceForm({
       <fieldset className="grid gap-2">
         <legend className="mb-1 text-sm font-medium">{copy.contribution}</legend>
         <RadioGroup
-          value={values.contributionType}
+          value={values.contributionType ?? ""}
           onValueChange={(value) => set("contributionType", value as ContributionType)}
-          aria-describedby="evidence-contribution-help"
+          // `aria-required`, not `required`: Radix would put `required` on every hidden radio input,
+          // and unnamed unchecked ones would then block a native submit after a choice is made.
+          aria-required="true"
+          aria-describedby={
+            awaitingContribution
+              ? "evidence-contribution-help evidence-contribution-needed"
+              : "evidence-contribution-help"
+          }
+          aria-invalid={Boolean(fieldErrors.contributionType)}
           className="grid gap-2 sm:grid-cols-2"
         >
           {CONTRIBUTION_TYPES.map((type) => (
@@ -374,6 +394,12 @@ export function EvidenceForm({
         <p id="evidence-contribution-help" className="text-muted-foreground text-xs">
           {copy.contributionHelp}
         </p>
+        {awaitingContribution && (
+          <p id="evidence-contribution-needed" className="text-muted-foreground text-xs">
+            {copy.contributionNeeded}
+          </p>
+        )}
+        <FieldError id="evidence-contribution-error" message={fieldErrors.contributionType} />
       </fieldset>
 
       {error && (
@@ -383,7 +409,11 @@ export function EvidenceForm({
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending}>
+        <Button
+          type="submit"
+          disabled={pending || awaitingContribution}
+          aria-describedby={awaitingContribution ? "evidence-contribution-needed" : undefined}
+        >
           {pending && <Loader2 className="animate-spin" aria-hidden />}
           {pending ? copy.saving : copy.save}
         </Button>

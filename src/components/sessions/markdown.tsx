@@ -22,6 +22,14 @@ const components: Components = {
     ) : (
       <code className="bg-muted rounded px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
     ),
+  // Headings in pasted or model text stay small and sit below the page's own h1/h2 (an agent's
+  // summary often starts with "## Build summary").
+  h1: ({ children }) => <h3 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h3>,
+  h2: ({ children }) => <h3 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h4>,
+  h4: ({ children }) => <h4 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h4>,
+  h5: ({ children }) => <h4 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h4>,
+  h6: ({ children }) => <h4 className="mt-3 mb-1 text-sm font-semibold first:mt-0">{children}</h4>,
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,

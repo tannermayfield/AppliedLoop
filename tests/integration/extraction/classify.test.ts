@@ -93,13 +93,55 @@ describe("classifyItem (LEARNING CHECKPOINT 3, R-10)", () => {
       conceptName: "Database transactions",
       status: "OPEN",
     });
-    expect(result.item).toMatchObject({
-      disposition: "NEEDS_REVIEW",
-      existingConceptId: concept.id,
-    });
+    expect(result.item.disposition).toBe("NEEDS_REVIEW");
+    // Changed on purpose (journeys audit F-18): this concept did not exist before the review, so the
+    // item must not read as "already in your library" (it used to be linked to the new concept).
+    expect(result.item.existingConceptId).toBeNull();
 
     expect((await events("concept_captured"))[0].metadataJson).toMatchObject({ via: "EXTRACTION" });
     expect(await events("learning_debt_created")).toHaveLength(1);
+  });
+
+  it("a concept this review creates never reads as already in the library, however often it is reclassified (F-18)", async () => {
+    const { alice, extraction, item } = await setup();
+    const first = await classifyItem(alice.ctx, extraction.id, item.id, {
+      disposition: "NEEDS_REVIEW",
+    });
+    const ignored = await classifyItem(alice.ctx, extraction.id, item.id, {
+      disposition: "IGNORED",
+    });
+    const again = await classifyItem(alice.ctx, extraction.id, item.id, {
+      disposition: "NEEDS_REVIEW",
+    });
+    const repeated = await classifyItem(alice.ctx, extraction.id, item.id, {
+      disposition: "NEEDS_REVIEW",
+    });
+
+    for (const result of [first, ignored, again, repeated]) {
+      expect(result.item.existingConceptId).toBeNull();
+    }
+    // Still one concept and one live debt, and a repeated click still reports that debt.
+    expect(await app.db.select().from(concepts)).toHaveLength(1);
+    expect(again.debt?.status).toBe("OPEN");
+    expect(repeated.debt?.id).toBe(again.debt?.id);
+  });
+
+  it("a concept the student already had when the extraction was made keeps its link", async () => {
+    const alice = await app.makeUser();
+    const concept = await insertConcept(app.db, alice.id, { name: "Database transactions" });
+    const { extraction, item } = await insertExtractionSetup(app.db, alice.id);
+    // What `createExtraction` stores for a candidate that matched an existing concept.
+    await app.db
+      .update(extractionItems)
+      .set({ normalizedConceptId: concept.id })
+      .where(eq(extractionItems.id, item.id));
+
+    const result = await classifyItem(alice.ctx, extraction.id, item.id, {
+      disposition: "NEEDS_REVIEW",
+    });
+    expect(result.item.existingConceptId).toBe(concept.id);
+    expect(result.debt?.conceptId).toBe(concept.id);
+    expect(await app.db.select().from(concepts)).toHaveLength(1);
   });
 
   it("NEEDS_REVIEW reuses the student's existing concept and emits no concept_captured", async () => {

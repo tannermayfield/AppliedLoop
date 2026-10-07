@@ -59,6 +59,9 @@ export const BUILD_COPY = {
     notesSaving: "Saving…",
     notesSaved: "Notes saved.",
     notesFailed: "Couldn't save your notes. They're still here; keep typing to retry.",
+    // Finish & Extract waits for the notes to be saved first (journeys audit F-17).
+    notesNotSaved:
+      "Your notes didn't save yet, so the session is not finished. Your text is still here; check your connection and try again.",
     finishHeading: "When you're finished",
     summaryLabel: "Build summary",
     summaryHint: "Paste the agent's closing summary, or write your own.",
@@ -66,6 +69,10 @@ export const BUILD_COPY = {
     artifactsHint:
       "Commits, PRs, files or links that show the work. They make the review more precise.",
     artifactType: "Type",
+    // New references pick their type from what is pasted (a path is a File, a link is a Link or a
+    // Pull request, a short hex string is a Commit); the student can still choose one by hand.
+    artifactAuto: "Auto-detect",
+    artifactAutoDetected: (label: string) => `Auto: ${label}`,
     artifactValue: "Reference",
     artifactValuePlaceholder: "abc123, src/services/profile.ts, a PR link…",
     addArtifact: "Add a reference",

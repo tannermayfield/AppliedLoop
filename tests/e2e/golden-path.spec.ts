@@ -124,6 +124,23 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
     await expect(page.getByText("Tutor is thinking…")).toBeHidden();
   });
 
+  await test.step("Submit an attempt: the tutor answers it in the thread", async () => {
+    // Step 6 of docs/ACCEPTANCE_TESTS.md: the student works, then submits what they wrote.
+    const thread = page.getByRole("region", { name: "Tutor conversation" });
+    const items = thread.getByRole("listitem");
+    const before = await items.count();
+    await page
+      .getByLabel("Your message to the tutor")
+      .fill(
+        "My attempt: WITH weakest AS (SELECT word_id, count(*) AS misses FROM mistakes GROUP BY word_id) SELECT word_id FROM weakest ORDER BY misses DESC LIMIT 5;",
+      );
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(items).toHaveCount(before + 2);
+    await expect(items.nth(before)).toContainText("WITH weakest AS");
+    await expect(items.nth(before + 1)).toContainText("Tutor");
+    await expect(page.getByText("Tutor is thinking…")).toBeHidden();
+  });
+
   await test.step("Finish with a reflection and confirm the move to Applied", async () => {
     await page.getByRole("button", { name: "Finish Apply Session" }).click();
     const dialog = page.getByRole("dialog", { name: "Finish this Apply session" });
@@ -157,7 +174,12 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
     await page
       .getByLabel("Link or reference")
       .fill("https://github.com/golden/adaptive-language/pull/12");
+    // How the work was made is the student's own answer: never pre-selected, even from a session,
+    // and Save stays off until they give it.
+    await expect(page.getByRole("radio", { checked: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save evidence" })).toBeDisabled();
     await page.getByRole("radio", { name: "Student-led" }).check();
+    await expect(page.getByRole("button", { name: "Save evidence" })).toBeEnabled();
     await page.getByRole("button", { name: "Save evidence" }).click();
     // Evidence may suggest Demonstrated; the student declines (AT-17), so the stage stays Applied.
     await expect(
@@ -215,11 +237,55 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
   });
 
   await test.step("Finish & Extract with a build summary", async () => {
+    const buildSessionId = new URL(page.url()).pathname.split("/").pop();
+    // A Markdown summary, as an agent writes it, with the original sentence as its first bullet.
     await page
       .getByLabel("Build summary")
-      .fill("Added database transactions and schema validation to the practice-results save path.");
+      .fill(
+        [
+          "## Build summary",
+          "",
+          "- Added database transactions and schema validation to the practice-results save path.",
+          "- Wrapped the attempt and its mistakes in one transaction.",
+        ].join("\n"),
+      );
+    // A typed path should be labelled as a file, not as a commit.
+    await page.getByRole("button", { name: "Add a reference" }).click();
+    await page.getByLabel("Reference 1", { exact: true }).fill("src/services/profile.ts");
+    await expect(page.getByLabel("Type 1", { exact: true }).locator("option:checked")).toHaveText(
+      "Auto: File",
+    );
+
+    // Notes typed just before Finish must survive (audit F-17). Hold the autosave on the wire so it
+    // is still in flight when Finish is clicked: the old code completed the session first, and the
+    // late save was then refused with a 409 and the text was lost.
+    const typedNotes = "One transaction per attempt; ask later why savepoints matter.";
+    await page.route("**/api/v1/sessions/*/notes", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // If the page has already moved on the route is gone; that is the very bug this guards.
+      await route.continue().catch(() => undefined);
+    });
+    const saveStarted = page.waitForRequest(
+      (request) => request.method() === "PATCH" && request.url().endsWith("/notes"),
+    );
+    await page.getByLabel("Session notes (saved automatically)").fill(typedNotes);
+    await saveStarted;
     await page.getByRole("button", { name: "Finish & Extract" }).click();
     await expect(page).toHaveURL(/\/sessions\/[^/]+\/extract$/);
+    await page.unroute("**/api/v1/sessions/*/notes");
+
+    const detail = await page.request.get(`/api/v1/sessions/${buildSessionId}`);
+    expect((await detail.json()).data.notes).toBe(typedNotes);
+
+    // "What changed?" renders the Markdown, and the typed path is a File reference.
+    const changed = page.getByRole("region", { name: "What changed?" });
+    await expect(changed.getByRole("heading", { name: "Build summary" })).toBeVisible();
+    await expect(changed.getByText("##")).toHaveCount(0);
+    await expect(
+      changed.getByRole("listitem").filter({ hasText: "Wrapped the attempt and its mistakes" }),
+    ).toBeVisible();
+    await expect(changed.getByText("File: src/services/profile.ts")).toBeVisible();
+    await expect(changed.getByText("Commit: src/services/profile.ts")).toHaveCount(0);
   });
 
   await test.step("Extraction: all candidates start unreviewed; student classifies two", async () => {
@@ -257,6 +323,8 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
     await expect(
       first.getByRole("button", { name: "Add to Needs Review", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
+    // The concept was created by this very review, so it is not "In your library" (audit F-18).
+    await expect(first.getByText("In your library")).toHaveCount(0);
     await Promise.all([
       saved(),
       second.getByRole("button", { name: "Ignore", exact: true }).click(),
@@ -281,6 +349,25 @@ test("golden path: the loop closes for one student", async ({ page, context }) =
       await expect(page.getByText(keptName).first()).toBeVisible();
       await expect(page.getByText(ignoredName)).toHaveCount(0);
     });
+  });
+
+  await test.step("Sign out for real", async () => {
+    await page.goto("/today");
+    // By keyboard, not mouse: in `next dev` the dev-tools badge sits on top of the sidebar avatar
+    // and swallows pointer events (see settings.spec.ts).
+    await page.getByRole("button", { name: "Account menu" }).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("menuitem", { name: "Sign out" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/sign-in/);
+
+    // Signed out for real: the session cookie is gone, the API no longer knows us, and an app page
+    // sends us back to sign in.
+    const cookies = await context.cookies();
+    expect(cookies.find((cookie) => /session_token$/.test(cookie.name))?.value ?? "").toBe("");
+    expect((await page.request.get("/api/v1/me")).status()).toBe(401);
+    await page.goto("/today");
+    await expect(page).toHaveURL(/\/sign-in/);
   });
 
   test.info().annotations.push({ type: "urls", description: `${sessionUrl} ${evidenceUrl}` });

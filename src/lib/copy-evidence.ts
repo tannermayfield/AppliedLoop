@@ -74,6 +74,9 @@ export const evidenceCopy = {
     artifactUrl: "Link or reference",
     contribution: "How was this made?",
     contributionHelp: "Be honest: this is more useful than pretending AI wasn't involved.",
+    /** Shown while nothing is chosen. The answer is the student's own: it is never pre-selected. */
+    contributionNeeded: "Choose one to save this evidence. Only you can say how it was made.",
+    contributionRequired: "Choose how this was made.",
     save: "Save evidence",
     saving: "Saving…",
     cancel: "Cancel",

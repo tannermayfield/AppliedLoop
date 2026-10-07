@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Repeat2 } from "lucide-react";
+import { TimeZoneSync } from "@/components/shell/time-zone-sync";
 import { getMe } from "@/domain/identity/me";
 import { getPageContext } from "@/lib/app-context";
 import { copy } from "@/lib/copy";
@@ -22,6 +23,8 @@ export default async function OnboardingPage() {
         {copy.brand.name}
       </p>
       <h1 className="sr-only">{onboardingCopy.welcome(firstName)}</h1>
+      {/* Every new student lands here first: this is where the browser's time zone is sent. */}
+      <TimeZoneSync timezone={me.profile.timezone} timezoneChosen={me.profile.timezoneChosen} />
       <OnboardingFlow greeting={onboardingCopy.welcome(firstName)} />
     </main>
   );

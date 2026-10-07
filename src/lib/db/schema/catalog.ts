@@ -105,7 +105,11 @@ export const conceptSkills = pgTable(
       .notNull()
       .references(() => skills.id, { onDelete: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.conceptId, t.skillId] })],
+  (t) => [
+    primaryKey({ columns: [t.conceptId, t.skillId] }),
+    // The key leads with concept_id; filtering and deleting by skill needs its own index.
+    index("concept_skills_skill_idx").on(t.skillId),
+  ],
 );
 
 /** Current stage per concept (a cache; `progress_events` is the immutable history). */
@@ -166,7 +170,10 @@ export const projectSkills = pgTable(
       .references(() => skills.id, { onDelete: "cascade" }),
     relationshipType: projectSkillRelationshipEnum("relationship_type").notNull().default("ACTIVE"),
   },
-  (t) => [primaryKey({ columns: [t.projectId, t.skillId] })],
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.skillId] }),
+    index("project_skills_skill_idx").on(t.skillId),
+  ],
 );
 
 /** Append-only, versioned project context fed to the Apply tutor and the Build context pack. */
@@ -190,5 +197,8 @@ export const projectContextSnapshots = pgTable(
     source: contextSourceEnum("source").notNull().default("MANUAL"),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("project_context_project_version_uq").on(t.projectId, t.version)],
+  (t) => [
+    uniqueIndex("project_context_project_version_uq").on(t.projectId, t.version),
+    index("project_context_user_idx").on(t.userId),
+  ],
 );

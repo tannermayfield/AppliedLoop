@@ -108,6 +108,9 @@ export async function classifyItem(
       input.userUnderstanding !== undefined ? input.userUnderstanding : item.userUnderstanding;
     const effects = effectsOf(disposition, understanding, item.disposition);
 
+    // `normalizedConceptId` is a snapshot from when the extraction was made: the concept the student
+    // ALREADY had then, or null. It is never rewritten here, so a concept this very review creates
+    // does not afterwards read as "already in your library" (journeys audit F-18).
     let conceptId = item.normalizedConceptId;
     let debtId: string | null = null;
     for (const effect of effects) {
@@ -127,18 +130,14 @@ export async function classifyItem(
       }
     }
     // A repeated NEEDS_REVIEW has no effects; still report the debt it made.
-    if (debtId === null && disposition === "NEEDS_REVIEW" && conceptId) {
-      debtId = await activeDebtFor(tx, conceptId);
+    if (debtId === null && disposition === "NEEDS_REVIEW") {
+      const knownId = conceptId ?? (await findConceptId(tx, item.normalizedName));
+      if (knownId) debtId = await activeDebtFor(tx, knownId);
     }
 
     const [updated] = await tx.db
       .update(extractionItems)
-      .set({
-        disposition,
-        userUnderstanding: understanding,
-        normalizedConceptId: conceptId,
-        updatedAt: tx.now(),
-      })
+      .set({ disposition, userUnderstanding: understanding, updatedAt: tx.now() })
       .where(and(eq(extractionItems.id, item.id), ownedBy(extractionItems.userId, tx.auth)))
       .returning();
 
@@ -149,6 +148,14 @@ export async function classifyItem(
     });
     return { item: toItemDto(updated), debt: debtId ? await getDebt(tx, debtId) : null };
   });
+}
+
+async function findConceptId(c: AppContext, normalizedName: string): Promise<string | null> {
+  const [row] = await c.db
+    .select({ id: concepts.id })
+    .from(concepts)
+    .where(and(eq(concepts.normalizedName, normalizedName), ownedBy(concepts.userId, c.auth)));
+  return row?.id ?? null;
 }
 
 /**

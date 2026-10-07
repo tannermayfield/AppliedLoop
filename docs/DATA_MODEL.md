@@ -87,7 +87,7 @@ Legend for the **v0** column:
 | Table | v0 | Important columns | Relationships / constraints |
 |---|---|---|---|
 | `users` | ✔ | `id UUID PK`, `email`, `display_name`, `role`, timestamps | `role ∈ STUDENT, ADMIN`; external auth ID unique |
-| `user_profiles` | ✔ | `user_id PK/FK`, `program`, `cohort`, `timezone`, `onboarding_completed`, `preferences_json` | 1:1 user |
+| `user_profiles` | ✔ | `user_id PK/FK`, `program`, `cohort`, `timezone`, `timezone_chosen`, `onboarding_completed`, `preferences_json` | 1:1 user |
 | `learning_sources` | ✔ | `id`, `user_id`, `type`, `title`, `code`, `term`, `active` | User-owned; type COURSE/SELF_STUDY/WORK/OTHER |
 | `skills` | ✔ | `id`, `name`, `slug`, `category`, `owner_user_id nullable` | Null owner = seeded/shared; owner = custom |
 | `concepts` | ✔ | `id`, `user_id`, `learning_source_id nullable`, `name`, `description`, `notes`, `captured_at` | User-owned |
@@ -241,3 +241,13 @@ Migration `drizzle/0001_github_integration.sql`; schema in `src/lib/db/schema/in
 
 - Enumerations: `integrations.provider` = `GITHUB`; `integrations.status` = `CONNECTED`, `SUSPENDED`, `DISCONNECTED` (resolves the `integrations.status` gap in R-24); `github_artifacts.type` = `COMMIT`, `PR`, `FILE`, `RELEASE` (as listed above; the v1 picker does not offer `RELEASE`, which would map to the evidence artifact type `URL`).
 - Every FK is `CASCADE` (user → integrations → repositories → artifacts / project links) or `SET NULL` (`evidence_items.github_artifact_id`); account deletion removes all GitHub rows (tested in `tests/integration/schema.test.ts`).
+
+## Implementation notes (v1 polish, 2026-10-07)
+
+Migration `drizzle/0002_profile_timezone_and_fk_indexes.sql` (the only schema change of this wave):
+
+- **`user_profiles.timezone_chosen boolean NOT NULL DEFAULT false`.** True once the student saved a time zone themselves (Settings, or `timezone` on `PATCH /me/profile`). While it is false and `timezone` is still the default `UTC`, the app may adopt the browser's zone once (`detectedTimezone` on the same endpoint); a chosen zone is never replaced. The rule is `src/lib/time-zone.ts`, applied in the browser and again in the conditional `UPDATE` on the server. It is exported with the rest of the profile.
+- **Every foreign key is served by an index that starts with its columns.** 24 indexes were added (the 16 the audit listed plus 8 more a scan of the schema found): `concept_skills(skill_id)`, `project_skills(skill_id)`, `evidence_skills(skill_id)`, `evidence_concepts(concept_id)`, `evidence_items(session_id)`, `ai_runs(session_id)`, `sessions(concept_id)`, `sessions(opportunity_id)`, `sessions(parent_session_id)`, `progress_events(session_id)`, `progress_events(concept_id)`, `learning_debt_items(concept_id)`, `learning_debt_items(project_id)`, `learning_debt_items(source_session_id)`, `learning_debt_items(extraction_item_id)`, `extractions(user_id)`, `extractions(ai_run_id)`, `extraction_items(user_id)`, `extraction_items(normalized_concept_id)`, `practice_opportunities(project_id)`, `practice_opportunities(concept_id)`, `practice_opportunities(ai_run_id)`, `session_messages(user_id)`, `project_context_snapshots(user_id)`. Without them every cascade, `SET NULL` and "what points at this row" lookup (deleting a session, a concept or an account, the KPI joins) scans the whole child table. `tests/integration/schema.test.ts` reads the live catalog and fails for any foreign key that lacks one, so a new foreign key must come with its index. (A partial index `WHERE col IS NOT NULL` counts: `skills.owner_user_id` uses one.)
+- `evidence_items.contribution_type` still has the database default `MIXED_UNSURE`. It is a storage fallback only: `POST /evidence` requires the value and the prefill never supplies one, so nothing in the app relies on the default.
+- `extraction_items.normalized_concept_id` is a snapshot of the student's concept with the same normalized name **when the extraction was made**. Classifying an item no longer rewrites it, so a concept created by the review itself does not read as "In your library".
+- Hot-read limits (not schema): Today reads at most 200 open Needs Review items (review order; the strip's count stays exact); the Apply picker offers at most 500 concepts (those below Applied first); `GET /sessions/:id` returns the newest 500 messages.
