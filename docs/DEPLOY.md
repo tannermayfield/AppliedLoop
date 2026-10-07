@@ -6,7 +6,7 @@ An ordered checklist for putting AppliedLoop on the internet for the pilot. Abou
 
 ## What only you can do
 
-You have to do these yourself; nothing in the repository can: create the Neon and Vercel projects, register the Google and GitHub OAuth apps, create the AI Gateway key, choose the four model ids, choose the Neon plan and confirm its restore window, set the pilot allow-list, check the AI provider's data terms and tell students, set up an uptime monitor, and run `pnpm eval` once with a real key.
+You have to do these yourself; nothing in the repository can: create the Neon and Vercel projects, register the Google and GitHub OAuth apps, create the AI Gateway key, choose the four model ids, choose the Neon plan and confirm its restore window, set the pilot allow-list, check the AI provider's data terms and tell students, set up an uptime monitor, run `pnpm eval` once with a real key, and (optional) register the GitHub App that lets students link repositories.
 
 ## Fill this in as you go
 
@@ -26,7 +26,7 @@ Treat everything except the model ids and `APP_URL` as a secret: a password mana
 
 ## 0. Before you start (5 minutes)
 
-- [ ] CI is green on `main` (the `verify` and `e2e` jobs). Vercel deploys whatever lands on `main`, so you want it green first.
+- [ ] CI is green on `main` (the `verify`, `postgres` and `e2e` jobs; `postgres` runs the whole test suite against a real Postgres server, `e2e` includes the accessibility audit). Vercel deploys whatever lands on `main`, so you want it green first.
 - [ ] You have a GitHub account that owns the repository, and accounts (or are ready to create them) at Vercel, Neon, Google Cloud and GitHub's developer settings.
 - [ ] The whole thing is for **one production environment**. Preview deployments are optional and not recommended for the pilot (RUNBOOK §1).
 
@@ -118,6 +118,12 @@ AUTH_ALLOWED_EMAILS=you@example.com,student.one@example.com,student.two@example.
 
 Comma-separated; case and spaces don't matter. **Include your own address.** The email compared is the one Google or GitHub returns (for GitHub, the primary verified email). This gate only controls who can **create** an account; to add a student later, add their email and redeploy. Left empty, anyone with a Google or GitHub account can sign up, and the deploy warns you.
 
+## 5b. GitHub repository linking (OWNER, optional, 20 minutes)
+
+Students can link a repository to a project and pick commits, pull requests and files as evidence. This needs a **GitHub App** (separate from "Sign in with GitHub"). **Leave every `GITHUB_APP_*` variable unset and the feature is simply off**: Settings says "GitHub linking isn't set up on this deployment", and students paste repository and artifact links by hand. Nothing fails.
+
+To turn it on, follow [integrations/github-app.md](integrations/github-app.md): register the App (read-only Metadata, Contents and Pull requests; callback `APP_URL/api/v1/integrations/github/callback`; webhook `APP_URL/api/v1/webhooks/github`), then add all six variables to Vercel (Production, secrets Sensitive): `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_WEBHOOK_SECRET`. A partial set is rejected by the deploy, which names what is missing. AppliedLoop stores metadata only (repository name, commit hash, pull request number, file path, link and title), never a token, code or diff. That page ends with the manual checks to run once, because the integration has only been tested against fakes so far.
+
 ## 6. First deploy and verify (15 minutes)
 
 Optional dry run first: `pnpm env:check` applies the same rules the deploy will to the variables in your shell and `.env.local`, and prints every problem by name, never by value (RUNBOOK §2 shows how to check what is already in Vercel). It saves a failed build.
@@ -129,7 +135,7 @@ Optional dry run first: `pnpm env:check` applies the same rules the deploy will 
      Production deploy: the configuration is checked strictly, then the database is migrated.
      configuration: ok
      migrating Postgres ep-….neon.tech/neondb (from DATABASE_URL_UNPOOLED)…
-     migrations: 1 applied now; the database has 1 of 1
+     migrations: 3 applied now; the database has 3 of 3
    ```
    On failure the build stops with a banner (`INVALID PRODUCTION CONFIGURATION` lists every bad variable by name, never by value; `PREDEPLOY FAILED` shows the database's own error) and **nothing goes live**. Fix it and redeploy. This is the first time the migration lock and the connection settings run against a real Neon server (they are tested against PGlite and with fakes), so if it fails there, copy the log to whoever maintains the repo.
 3. **Check health:**
@@ -141,7 +147,7 @@ Optional dry run first: `pnpm env:check` applies the same rules the deploy will 
 5. **Sign in** with an allow-listed account → onboarding → Today. **Try a second account that is not on the list**: it must be refused with "This pilot is invite-only…".
 6. **Demo data is for your laptop, not production.** `pnpm db:seed:demo` refuses to run against a Postgres server or `NODE_ENV=production` without `--force`, and a deployed database is OAuth-only, so nobody could sign in as the demo student anyway. For a demo: stop `pnpm dev`, run `pnpm db:seed:demo` (add `AUTH_DEV_LOGIN=1` and a `BETTER_AUTH_SECRET` to `.env.local`), start `pnpm dev`, and sign in with the dev form as `demo@appliedloop.example`. `--reset` rebuilds it with fresh dates.
 7. **Set up monitoring** (RUNBOOK §6): an uptime monitor on `APP_URL/api/health`, and an `ERROR_WEBHOOK_URL` (Slack incoming webhook is the simplest). Adding a variable needs a redeploy.
-8. **Protect `main`** (GitHub → Settings → Branches → Add rule): require the `verify` and `e2e` checks before merging, so only green code reaches Vercel.
+8. **Protect `main`** (GitHub → Settings → Branches → Add rule): require the `verify`, `postgres` and `e2e` checks before merging, so only green code reaches Vercel.
 
 ## 7. Run `pnpm eval` once against the real models (OWNER, 10 minutes, costs a little)
 
@@ -176,6 +182,7 @@ Do this once after the first deploy and after any change to auth, AI or the data
 - [ ] **Apply:** generate a practice challenge, start the session, ask the tutor "just give me all the code": it must hint or offer **Switch to Build**, never a full implementation. Finish the session; confirm the suggested stage yourself.
 - [ ] **Build → Extract:** start a Build session, copy the context pack, write a summary, **Finish & Extract**: the candidates are all unreviewed with no claim about what you understand. Send one to Needs Review.
 - [ ] **Evidence:** attach evidence to the Apply session.
+- [ ] **GitHub (only if you did 5b):** Settings → Connect GitHub → install the App on a test account → link a repository to a project → pick a commit as evidence; then uninstall the App on GitHub and confirm the link shows as no longer connected.
 - [ ] In the Neon SQL editor: `select purpose, status, provider, count(*) from ai_runs group by 1,2,3;` shows `SUCCEEDED` rows with provider `gateway` (not `demo`).
 - [ ] Vercel → Logs show `"event":"ai_run"` lines and **no** `server_error` lines for this walkthrough.
 - [ ] An error response (for example `POST /api/v1/concepts` with `{}` from the browser console) carries `error.requestId` and an `x-request-id` header, and searching that id in Logs finds the request.

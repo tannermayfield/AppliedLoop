@@ -52,6 +52,37 @@ jobs:
         run: pnpm audit --prod --audit-level=high
         continue-on-error: true
 
+  # The suite runs on PGlite (in-process Postgres) everywhere else. Deployed environments use Neon,
+  # which is a real Postgres server, so the same suite also runs once against one: it catches SQL,
+  # locking and transaction behavior that only PGlite accepts. Each test file gets its own database.
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BETTER_AUTH_SECRET: ci-secret-ci-secret-ci-secret-ci-secret
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
